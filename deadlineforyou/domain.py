@@ -23,9 +23,6 @@ class SessionStatus(StrEnum):
 def utcnow() -> datetime:
     """utcnow
 
-    Args:
-        없음.
-
     Returns:
         datetime: 현재 UTC 시각.
     """

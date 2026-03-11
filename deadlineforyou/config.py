@@ -28,9 +28,6 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """get_settings
 
-    Args:
-        없음.
-
     Returns:
         Settings: 환경 변수와 기본값이 합쳐진 설정 객체.
     """

@@ -77,6 +77,14 @@ DFY_LLM_MODEL=gpt-4.1-mini
 
 프로젝트에 포함된 `qwen3` 기반 `saya_rp_4b_v3`를 직접 로드한다.
 
+모델 파일이 아직 없다면 먼저 초기화 스크립트로 내려받는다.
+
+```bash
+cd /home/hosung/pytorch-demo/DeadlineForYou
+source .venv/bin/activate
+uv run initialize.py
+```
+
 `.env`:
 
 ```env
