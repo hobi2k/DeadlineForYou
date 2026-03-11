@@ -1,0 +1,65 @@
+<svg width="1280" height="640" viewBox="0 0 1280 640" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="88" y1="56" x2="1184" y2="592" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#121212"/>
+      <stop offset="0.45" stop-color="#1F1A17"/>
+      <stop offset="1" stop-color="#40220F"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="152" y1="120" x2="1096" y2="120" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F7D24C"/>
+      <stop offset="1" stop-color="#FF7A00"/>
+    </linearGradient>
+    <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse">
+      <path d="M48 0H0V48" stroke="#FFFFFF" stroke-opacity="0.06"/>
+    </pattern>
+  </defs>
+
+  <rect width="1280" height="640" fill="#0E0E0E"/>
+  <rect x="24" y="24" width="1232" height="592" rx="28" fill="url(#bg)"/>
+  <rect x="24" y="24" width="1232" height="592" rx="28" fill="url(#grid)"/>
+
+  <rect x="72" y="72" width="1136" height="18" rx="9" fill="url(#accent)"/>
+  <rect x="72" y="550" width="322" height="22" rx="11" fill="#F7D24C"/>
+  <rect x="72" y="584" width="212" height="10" rx="5" fill="#FFFFFF" fill-opacity="0.16"/>
+  <rect x="302" y="584" width="132" height="10" rx="5" fill="#FFFFFF" fill-opacity="0.08"/>
+
+  <path d="M870 130L1172 432" stroke="#F7D24C" stroke-width="26" stroke-linecap="round" stroke-opacity="0.16"/>
+  <path d="M820 188L1122 490" stroke="#FF7A00" stroke-width="12" stroke-linecap="round" stroke-opacity="0.3"/>
+  <path d="M920 110L1222 412" stroke="#FFF4CF" stroke-width="4" stroke-linecap="round" stroke-opacity="0.2"/>
+
+  <g opacity="0.96">
+    <rect x="846" y="214" width="274" height="252" rx="24" fill="#141414" stroke="#F7D24C" stroke-opacity="0.35" stroke-width="2"/>
+    <rect x="876" y="248" width="214" height="12" rx="6" fill="#F7D24C"/>
+    <rect x="876" y="286" width="178" height="12" rx="6" fill="#FFFFFF" fill-opacity="0.84"/>
+    <rect x="876" y="322" width="198" height="12" rx="6" fill="#FFFFFF" fill-opacity="0.7"/>
+    <rect x="876" y="358" width="162" height="12" rx="6" fill="#FFFFFF" fill-opacity="0.58"/>
+    <rect x="876" y="406" width="116" height="26" rx="13" fill="#FF7A00"/>
+  </g>
+
+  <text x="84" y="170" fill="#F7D24C" font-family="monospace" font-size="24" font-weight="700" letter-spacing="3.2">
+    SHIMEKIRI KANTOKU ACTIVE
+  </text>
+  <text x="84" y="278" fill="#FFF7D8" font-family="Arial, Helvetica, sans-serif" font-size="88" font-weight="800">
+    DeadlineForYou
+  </text>
+  <text x="84" y="344" fill="#FFFFFF" fill-opacity="0.82" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="700">
+    Open the file. Translate the first line. Report back.
+  </text>
+  <text x="84" y="412" fill="#FFFFFF" fill-opacity="0.66" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="400">
+    A deadline enforcement bot for freelance translators.
+  </text>
+
+  <g opacity="0.88">
+    <rect x="88" y="458" width="246" height="58" rx="29" fill="#141414" stroke="#FFFFFF" stroke-opacity="0.14"/>
+    <text x="122" y="495" fill="#FFFFFF" font-family="monospace" font-size="22" font-weight="700">
+      START 10 MIN
+    </text>
+  </g>
+
+  <g opacity="0.9">
+    <rect x="356" y="458" width="238" height="58" rx="29" fill="#FF7A00"/>
+    <text x="392" y="495" fill="#140C06" font-family="monospace" font-size="22" font-weight="700">
+      REPORT NOW
+    </text>
+  </g>
+</svg>
