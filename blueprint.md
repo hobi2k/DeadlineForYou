@@ -276,6 +276,7 @@
 ### 모델 방향
 
 - 코칭: `saya_rp_4b_v3`
+- 대체 코칭: `Qwen3-4B-Instruct-2507`
 - 번역: `rosetta_4b`
 - 이미지: `sdxl_turbo`
 

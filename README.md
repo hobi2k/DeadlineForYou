@@ -20,6 +20,7 @@
 ## 구성 요약
 
 - 코칭 모델: `deadlineforyou/models/saya_rp_4b_v3`
+- 대체 코칭 모델: `deadlineforyou/models/qwen3_4b_instruct`
 - 번역 모델: `deadlineforyou/models/rosetta_4b`
 - 이미지 모델: `deadlineforyou/models/sdxl_turbo`
 - 테스트 fallback: `scripted`
@@ -64,6 +65,14 @@ uv run initialize.py --target image
 
 - `coach`: `ahnhs2k/saya_rp_4b_v3`
 - `translation`: `yanolja/YanoljaNEXT-Rosetta-4B`
+
+대체 코칭 모델을 받고 싶으면:
+
+```bash
+uv run initialize.py --target coach_qwen
+```
+
+- `coach_qwen`: `Qwen/Qwen3-4B-Instruct-2507`
 
 이미지 모델은 선택적으로 추가 다운로드:
 

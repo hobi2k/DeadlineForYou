@@ -426,6 +426,7 @@ DB 엔진:
 `LocalLLMProvider` 특징:
 
 - `saya_rp_4b_v3` 사용
+- 필요하면 `qwen3_4b_instruct` 같은 대체 Qwen 체크포인트로 교체 가능
 - `Qwen` 계열 chat template 적용
 - tool calling 결과 파싱 지원
 
