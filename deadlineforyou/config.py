@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     llm_provider: str = "local"
     local_model_path: Path = Field(default=Path("deadlineforyou/models/saya_rp_4b_v3"))
     local_device_map: str = "auto"
-    local_max_new_tokens: int = 220
+    local_max_new_tokens: int = 550
     local_temperature: float = 0.7
     translation_provider: str = "local"
     translation_local_model_path: Path = Field(default=Path("deadlineforyou/models/rosetta_4b"))

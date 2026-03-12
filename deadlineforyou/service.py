@@ -6,7 +6,6 @@ from sqlite3 import Row
 from typing import Any
 
 from deadlineforyou.config import get_settings
-from deadlineforyou.domain import RuleEvaluation
 from deadlineforyou.prompts import SYSTEM_PROMPT, build_context_block
 from deadlineforyou.providers import (
     ImageProvider,
@@ -15,7 +14,6 @@ from deadlineforyou.providers import (
     build_image_provider,
     build_translation_provider,
 )
-from deadlineforyou.rules import evaluate_mode
 from deadlineforyou.storage import Database
 from deadlineforyou.tools import build_bound_chat_tools
 
@@ -33,6 +31,30 @@ def _row_to_dict(row: Row | None) -> dict | None:
 
 
 class DeadlineCoachService:
+    def _recommend_timer_minutes(self, project: dict | None) -> int:
+        """_recommend_timer_minutes
+
+        Args:
+            project: 활성 프로젝트 스냅샷 또는 None.
+
+        Returns:
+            int: 현재 상태에서 권장할 기본 타이머 분 수.
+        """
+        if not project:
+            return 10
+
+        deadline_at = datetime.fromisoformat(project["deadline_at"]).astimezone(UTC)
+        remaining = deadline_at - datetime.now(UTC)
+        hours_left = max(int(remaining.total_seconds() // 3600), 0)
+        total_units = max(project["total_units"], 1)
+        completion_ratio = project["completed_units"] / total_units
+
+        if hours_left <= 6:
+            return 25
+        if completion_ratio < 0.4:
+            return 15
+        return 10
+
     def __init__(self, database: Database, provider: LLMProvider) -> None:
         """__init__
 
@@ -178,7 +200,7 @@ class DeadlineCoachService:
         user_id: int,
         message: str,
         project_id: int | None = None,
-    ) -> tuple[str, RuleEvaluation, list[str], dict[str, dict[str, Any]]]:
+    ) -> tuple[str, int, list[str], dict[str, dict[str, Any]]]:
         """chat
 
         Args:
@@ -187,21 +209,20 @@ class DeadlineCoachService:
             project_id: 호출자가 명시적으로 넘긴 프로젝트 식별자.
 
         Returns:
-            tuple[str, RuleEvaluation, list[str], dict[str, dict[str, Any]]]:
-                생성된 답변, 규칙 엔진 평가 결과, 실행된 tool 이름 목록, tool 결과 맵.
+            tuple[str, int, list[str], dict[str, dict[str, Any]]]:
+                생성된 답변, 권장 타이머 분 수, 실행된 tool 이름 목록, tool 결과 맵.
         """
         project = self.get_active_project(user_id, project_id)
-
-        evaluation = evaluate_mode(message, project)
+        timer_minutes = self._recommend_timer_minutes(project)
 
         history_rows = self.database.recent_messages(user_id)
         history = [{"role": row["role"], "content": row["content"]} for row in history_rows]
 
-        # 모델 호출 전에 현재 사용자 상태, 프로젝트 상태, 규칙 힌트를 구조화해서 묶는다.
+        # 모델 호출 전에 현재 사용자 상태, 프로젝트 상태, 권장 타이머를 구조화해서 묶는다.
         user_snapshot = self._build_user_snapshot(user_id)
         project_snapshot = self._build_project_snapshot(project)
-        rule_snapshot = self._build_rule_snapshot(evaluation)
-        context_block = build_context_block(user_snapshot, project_snapshot, rule_snapshot)
+        timer_snapshot = self._build_timer_snapshot(timer_minutes)
+        context_block = build_context_block(user_snapshot, project_snapshot, timer_snapshot)
 
         # 다음 턴에서 최근 문맥을 재사용할 수 있도록 사용자/봇 메시지를 모두 저장한다.
         self.database.add_message(user_id, project["id"] if project else None, "user", message)
@@ -255,7 +276,7 @@ class DeadlineCoachService:
         if not reply:
             reply = "도구 실행까진 했는데 아직 네 보고가 없다. 지금 상태를 짧게 다시 말해."
         self.database.add_message(user_id, project["id"] if project else None, "assistant", reply)
-        return reply, evaluation, executed_tools, tool_results
+        return reply, timer_minutes, executed_tools, tool_results
 
     def coach_nudge(self, user_id: int, message: str, project_id: int | None = None) -> str:
         """coach_nudge
@@ -269,11 +290,10 @@ class DeadlineCoachService:
             str: 저장 없이 즉시 보낼 짧은 코칭 메시지.
         """
         project = self.get_active_project(user_id, project_id)
-        evaluation = evaluate_mode(message, project)
         user_snapshot = self._build_user_snapshot(user_id)
         project_snapshot = self._build_project_snapshot(project)
-        rule_snapshot = self._build_rule_snapshot(evaluation)
-        context_block = build_context_block(user_snapshot, project_snapshot, rule_snapshot)
+        timer_snapshot = self._build_timer_snapshot(self._recommend_timer_minutes(project))
+        context_block = build_context_block(user_snapshot, project_snapshot, timer_snapshot)
         result = self.provider.generate_turn(
             SYSTEM_PROMPT,
             context_block,
@@ -392,13 +412,13 @@ class DeadlineCoachService:
             f"status={project['status']}"
         )
 
-    def _build_rule_snapshot(self, evaluation: RuleEvaluation) -> str:
-        """_build_rule_snapshot
+    def _build_timer_snapshot(self, timer_minutes: int) -> str:
+        """_build_timer_snapshot
 
         Args:
-            evaluation: 현재 턴에 대한 규칙 엔진 출력.
+            timer_minutes: 현재 상태에서 권장하는 타이머 분 수.
 
         Returns:
-            str: 프롬프트 주입용 규칙 가이드 요약 문자열.
+            str: 프롬프트 주입용 권장 타이머 가이드 문자열.
         """
-        return f"recommended_timer_minutes={evaluation.timer_minutes}"
+        return f"recommended_timer_minutes={timer_minutes}"

@@ -131,10 +131,10 @@ def chat(payload: ChatRequest):
         ChatResponse: 페르소나 답변과 규칙 엔진 메타데이터.
     """
     service: DeadlineCoachService = app.state.service
-    reply, evaluation, executed_tools, tool_results = service.chat(payload.user_id, payload.message, payload.project_id)
+    reply, timer_minutes, executed_tools, tool_results = service.chat(payload.user_id, payload.message, payload.project_id)
     return {
         "reply": reply,
-        "timer_minutes": evaluation.timer_minutes,
+        "timer_minutes": timer_minutes,
         "executed_tools": executed_tools,
         "tool_results": tool_results,
     }

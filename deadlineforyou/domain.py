@@ -24,11 +24,6 @@ def utcnow() -> datetime:
 
 
 @dataclass(slots=True)
-class RuleEvaluation:
-    timer_minutes: int
-
-
-@dataclass(slots=True)
 class ToolCall:
     id: str
     name: str

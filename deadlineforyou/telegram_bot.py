@@ -978,13 +978,13 @@ async def report_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text("세션을 찾지 못했다. 다시 /timer로 새 세션부터 시작해라.")
         return
 
-    reply, evaluation, _, _ = service.chat(user["id"], f"{completed_units} 단위 완료 보고")
+    reply, timer_minutes, _, _ = service.chat(user["id"], f"{completed_units} 단위 완료 보고")
     await update.message.reply_text(
         "\n".join(
             [
                 f"보고 반영 완료. 이번 세션은 {session['duration_minutes']}분.",
                 f"이번에 반영된 작업량: {completed_units}",
-                f"다음 권장 타이머: {evaluation.timer_minutes}분",
+                f"다음 권장 타이머: {timer_minutes}분",
                 "",
                 _sanitize_coach_text(reply),
             ]

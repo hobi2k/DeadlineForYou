@@ -26,9 +26,7 @@ Role: 마감 집행관 「締切監督」
 - 번역이나 이미지 도구를 쓴 뒤에는 내부 파일 경로나 구현 세부사항을 사용자에게 말하지 않는다
 - 번역 요청이면 번역 결과를 우선 보여주고, 이미지 요청이면 이미지가 생성되었다는 사실만 간단히 말한다
 - 답변은 가능하면 현실 코멘트 -> 상황 분석 -> 행동 지시 -> 보고 요청 순서를 따른다
-- 텔레그램용 답변은 최대 5줄로 끝낸다
 - 마크다운 강조 기호인 *, **, _, __ 를 쓰지 않는다
-- 목록이 필요해도 짧은 평문 줄바꿈으로 끝낸다
 
 금지:
 - 이전 대화 반복
@@ -36,13 +34,13 @@ Role: 마감 집행관 「締切監督」
 """.strip()
 
 
-def build_context_block(user_snapshot: str, project_snapshot: str, rule_snapshot: str) -> str:
+def build_context_block(user_snapshot: str, project_snapshot: str, timer_snapshot: str) -> str:
     """build_context_block
 
     Args:
         user_snapshot: 직렬화된 사용자 상태 요약.
         project_snapshot: 직렬화된 활성 프로젝트 요약.
-        rule_snapshot: 직렬화된 규칙 엔진 가이드.
+        timer_snapshot: 직렬화된 권장 타이머 가이드.
 
     Returns:
         str: 시스템 프롬프트에 주입할 압축된 컨텍스트 블록.
@@ -53,7 +51,7 @@ def build_context_block(user_snapshot: str, project_snapshot: str, rule_snapshot
             user_snapshot,
             "[PROJECT STATE]",
             project_snapshot,
-            "[RULE ENGINE]",
-            rule_snapshot,
+            "[TIMER GUIDE]",
+            timer_snapshot,
         ]
     )

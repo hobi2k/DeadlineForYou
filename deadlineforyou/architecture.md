@@ -69,7 +69,6 @@ deadlineforyou/
  ├─ telegram_bot.py
  ├─ service.py
  ├─ storage.py
- ├─ rules.py
  ├─ prompts.py
  ├─ providers.py
  ├─ tools.py
@@ -85,7 +84,6 @@ deadlineforyou/
 - `telegram_bot.py`: polling 기반 Telegram bot
 - `service.py`: 핵심 오케스트레이터
 - `storage.py`: SQLite 영속 계층
-- `rules.py`: 기본 권장 타이머 계산
 - `prompts.py`: 시스템 프롬프트와 컨텍스트 조립
 - `providers.py`: 코칭 / 번역 / 이미지 provider
 - `tools.py`: 내부 tool registry
@@ -324,13 +322,9 @@ DB 엔진:
 - 번역 / 이미지 생성 오케스트레이션
 - 세션 완료 후 진행량 반영
 
-## 10. 규칙 엔진
+## 10. 권장 타이머 계산
 
-핵심 파일:
-
-- `deadlineforyou/rules.py`
-
-현재 규칙 엔진은 단순하다.
+현재 권장 타이머 계산은 `service.py` 내부에서 직접 처리한다.
 
 입력:
 
