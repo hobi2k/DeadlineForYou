@@ -68,6 +68,7 @@ class ChatResponse(BaseModel):
     timer_minutes: int
     action_hint: str
     report_hint: str
+    executed_tools: list[str] = []
 
 
 class SessionCreate(BaseModel):

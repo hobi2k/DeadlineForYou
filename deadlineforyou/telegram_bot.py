@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
@@ -88,6 +91,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 "마감 집행관 「締切監督」 투입.",
                 f"등록된 사용자: {user['nickname']}",
                 "지금 할 수 있는 것:",
+                "/deadline_add - 프로젝트 등록",
+                "/deadline_list - 프로젝트 목록 확인",
                 "/status - 현재 프로젝트와 진행률 확인",
                 "/start10 - 10분 강제 시동 세션",
                 "/start15 - 15분 구조 복구 세션",
@@ -114,6 +119,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "\n".join(
             [
                 "/start - 사용자 등록과 시작 안내",
+                "/deadline_add <제목> | <총량> | <YYYY-MM-DD HH:MM> | <단위>",
+                "예: /deadline_add 게임 시나리오 번역 | 120 | 2026-03-14 18:00 | 문장",
+                "/deadline_list - 프로젝트 목록 확인",
                 "/status - 현재 활성 프로젝트 상태",
                 "/start10 - 10분 세션 시작",
                 "/start15 - 15분 세션 시작",
@@ -160,6 +168,124 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     )
 
 
+def _parse_deadline_input(raw_text: str, timezone_name: str) -> tuple[str, int, datetime, str]:
+    """_parse_deadline_input
+
+    Args:
+        raw_text: `/deadline_add` 뒤에 입력된 원문.
+        timezone_name: 사용자 시간대 이름.
+
+    Returns:
+        tuple[str, int, datetime, str]: 제목, 총량, 마감 시각, 단위명.
+    """
+    parts = [part.strip() for part in raw_text.split("|")]
+    if len(parts) < 3:
+        raise ValueError("입력 형식이 부족하다.")
+
+    title = parts[0]
+    total_units = int(parts[1])
+    deadline_str = parts[2]
+    unit_label = parts[3] if len(parts) >= 4 and parts[3] else "문장"
+
+    # 시간대가 없는 입력은 사용자의 기본 시간대로 해석한다.
+    deadline_at = datetime.fromisoformat(deadline_str.replace(" ", "T"))
+    if deadline_at.tzinfo is None:
+        deadline_at = deadline_at.replace(tzinfo=ZoneInfo(timezone_name))
+    return title, total_units, deadline_at, unit_label
+
+
+async def deadline_add_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """deadline_add_command
+
+    Args:
+        update: 텔레그램 업데이트 객체.
+        context: 텔레그램 핸들러 컨텍스트.
+
+    Returns:
+        None: 새 프로젝트를 등록하고 활성 프로젝트로 안내한다.
+    """
+    user = await _ensure_user(update, context)
+    service: DeadlineCoachService = context.application.bot_data["service"]
+
+    raw_text = update.message.text.removeprefix("/deadline_add").strip()
+    if not raw_text:
+        await update.message.reply_text(
+            "\n".join(
+                [
+                    "형식부터 맞춰라.",
+                    "/deadline_add <제목> | <총량> | <YYYY-MM-DD HH:MM> | <단위>",
+                    "예: /deadline_add 게임 시나리오 번역 | 120 | 2026-03-14 18:00 | 문장",
+                ]
+            )
+        )
+        return
+
+    try:
+        title, total_units, deadline_at, unit_label = _parse_deadline_input(raw_text, user["timezone"])
+    except ValueError:
+        await update.message.reply_text(
+            "입력 형식이 틀렸다.\n예: /deadline_add 게임 시나리오 번역 | 120 | 2026-03-14 18:00 | 문장"
+        )
+        return
+
+    # 새 프로젝트를 활성으로 쓰기 위해 기존 active 프로젝트를 paused로 내려둔다.
+    for project in service.list_projects(user["id"]):
+        if project["status"] == "active":
+            service.update_project(project["id"], {"status": "paused"})
+
+    project = service.create_project(
+        {
+            "user_id": user["id"],
+            "title": title,
+            "source_language": "ja",
+            "target_language": "ko",
+            "total_units": total_units,
+            "completed_units": 0,
+            "deadline_at": deadline_at,
+            "unit_label": unit_label,
+        }
+    )
+
+    await update.message.reply_text(
+        "\n".join(
+            [
+                "프로젝트 등록 완료.",
+                f"제목: {project['title']}",
+                f"분량: {project['completed_units']}/{project['total_units']} {project['unit_label']}",
+                f"마감: {project['deadline_at']}",
+                "이제 /status로 확인하고 바로 /start10 쳐라.",
+            ]
+        )
+    )
+
+
+async def deadline_list_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """deadline_list_command
+
+    Args:
+        update: 텔레그램 업데이트 객체.
+        context: 텔레그램 핸들러 컨텍스트.
+
+    Returns:
+        None: 현재 사용자의 프로젝트 목록을 전송한다.
+    """
+    user = await _ensure_user(update, context)
+    service: DeadlineCoachService = context.application.bot_data["service"]
+    projects = service.list_projects(user["id"])
+    if not projects:
+        await update.message.reply_text("등록된 프로젝트가 없다. /deadline_add부터 쳐라.")
+        return
+
+    lines = ["현재 프로젝트 목록:"]
+    for project in projects[:10]:
+        lines.append(
+            f"- [{project['status']}] {project['title']} | "
+            f"{project['completed_units']}/{project['total_units']} {project['unit_label']} | "
+            f"{project['deadline_at']}"
+        )
+    await update.message.reply_text("\n".join(lines))
+
+
 async def _start_session(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -184,27 +310,28 @@ async def _start_session(
     session = service.start_session(user["id"], project_id, duration_minutes, mode)
     context.user_data["last_session_id"] = session["id"]
 
-    # 타이머 종료 시점에 같은 채팅으로 후속 압박 메시지를 보낸다.
-    context.job_queue.run_once(
-        send_session_followup,
-        when=duration_minutes * 60,
-        chat_id=update.effective_chat.id,
-        data={"session_id": session["id"]},
-        name=f"session-{session['id']}",
-    )
-
-    await update.message.reply_text(
-        "\n".join(
-            [
-                f"{duration_minutes}분 세션 시작.",
-                f"세션 ID: {session['id']}",
-                "지금 할 일:",
-                "파일 열기",
-                "첫 문장부터 번역",
-                f"{duration_minutes}분 끝나면 /report <작업량> 으로 보고",
-            ]
+    # JobQueue가 활성화된 경우에만 후속 알림을 예약한다.
+    if context.job_queue is not None:
+        context.job_queue.run_once(
+            send_session_followup,
+            when=duration_minutes * 60,
+            chat_id=update.effective_chat.id,
+            data={"session_id": session["id"]},
+            name=f"session-{session['id']}",
         )
-    )
+
+    lines = [
+        f"{duration_minutes}분 세션 시작.",
+        f"세션 ID: {session['id']}",
+        "지금 할 일:",
+        "파일 열기",
+        "첫 문장부터 번역",
+        f"{duration_minutes}분 끝나면 /report <작업량> 으로 보고",
+    ]
+    if context.job_queue is None:
+        lines.append("참고: 현재 JobQueue가 없어 자동 종료 알림은 보내지 않는다.")
+
+    await update.message.reply_text("\n".join(lines))
 
 
 async def start10_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -281,7 +408,7 @@ async def report_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text("세션을 찾지 못했다. 다시 /start10부터 시작해라.")
         return
 
-    reply, evaluation = service.chat(user["id"], f"{completed_units} {('단위 완료' if completed_units else '세션 완료')}")
+    reply, evaluation, _ = service.chat(user["id"], f"{completed_units} {('단위 완료' if completed_units else '세션 완료')}")
     await update.message.reply_text(
         "\n".join(
             [
@@ -327,7 +454,7 @@ async def text_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     """
     user = await _ensure_user(update, context)
     service: DeadlineCoachService = context.application.bot_data["service"]
-    reply, _ = service.chat(user["id"], update.message.text)
+    reply, _, _ = service.chat(user["id"], update.message.text)
     await update.message.reply_text(reply)
 
 
@@ -349,6 +476,8 @@ def build_application() -> Application:
 
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("deadline_add", deadline_add_command))
+    application.add_handler(CommandHandler("deadline_list", deadline_list_command))
     application.add_handler(CommandHandler("status", status_command))
     application.add_handler(CommandHandler("start10", start10_command))
     application.add_handler(CommandHandler("start15", start15_command))

@@ -8,6 +8,8 @@
 
 - FastAPI 기반 백엔드
 - Telegram bot 어댑터
+- 내부 tool calling 루프
+- stdio 기반 MCP server
 - SQLite 저장소
 - 마감 프로젝트 등록/수정
 - 작업 세션 시작/완료
@@ -111,11 +113,41 @@ DFY_LOCAL_TEMPERATURE=0.7
 - `POST /sessions/{session_id}/complete`
 - `GET /users/{user_id}/daily-report`
 
+`POST /chat` 응답에는 `executed_tools`가 포함될 수 있다.
+
+의미:
+
+- 모델이 내부 도구를 호출했다면 어떤 도구가 실행됐는지 확인 가능
+- tool calling 디버깅과 검증에 유용
+
+## MCP 서버 실행
+
+stdio 기반 MCP 서버를 실행하려면 아래를 사용한다.
+
+```bash
+cd /home/hosung/pytorch-demo/DeadlineForYou
+source .venv/bin/activate
+uv run python -m deadlineforyou.mcp_server
+```
+
+현재 제공 범위:
+
+- `tools/list`
+- `tools/call`
+- `resources/list`
+- `resources/read`
+- `prompts/list`
+- `prompts/get`
+
+자세한 구조는 [deadlineforyou/architecture.md](deadlineforyou/architecture.md)를 본다.
+
 ## 텔레그램에서 실험하기
 
 현재 텔레그램 bot에서 가능한 것은 아래와 같다.
 
 - `/start` : 텔레그램 사용자 자동 등록
+- `/deadline_add` : 텔레그램 안에서 프로젝트 등록
+- `/deadline_list` : 프로젝트 목록 확인
 - `/help` : 명령 목록 확인
 - `/status` : 현재 활성 프로젝트와 오늘 요약 확인
 - `/start10` : 10분 강제 시동 세션 시작
@@ -129,15 +161,29 @@ DFY_LOCAL_TEMPERATURE=0.7
 1. BotFather에서 토큰을 발급받아 `.env`에 `DFY_TELEGRAM_BOT_TOKEN`을 넣는다.
 2. bot 프로세스를 실행한다.
 3. 텔레그램에서 봇 채팅을 열고 `/start`를 입력한다.
-4. `/status`를 눌러 현재 프로젝트 상태를 확인한다.
-5. `하기 싫다` 같은 평문 메시지를 보내 응답 톤을 본다.
-6. `/start10`으로 세션을 시작하고, 종료 알림이 오면 `/report 8`처럼 보고한다.
+4. `/deadline_add 게임 시나리오 번역 | 120 | 2026-03-14 18:00 | 문장` 으로 프로젝트를 등록한다.
+5. `/status`를 눌러 현재 프로젝트 상태를 확인한다.
+6. `하기 싫다` 같은 평문 메시지를 보내 응답 톤을 본다.
+7. `/start10`으로 세션을 시작하고, 종료 알림이 오면 `/report 8`처럼 보고한다.
 
-중요:
+`/deadline_add` 형식:
 
-- 텔레그램 bot은 사용자를 자동 생성하지만 프로젝트 생성 명령은 아직 없다.
-- 따라서 첫 프로젝트는 Swagger UI 또는 REST API에서 먼저 만들어야 한다.
-- 프로젝트가 없으면 `/status`에서 그 사실을 알려준다.
+```text
+/deadline_add <제목> | <총량> | <YYYY-MM-DD HH:MM> | <단위>
+```
+
+예:
+
+```text
+/deadline_add 게임 시나리오 번역 | 120 | 2026-03-14 18:00 | 문장
+```
+
+설명:
+
+- `제목`: 프로젝트 이름
+- `총량`: 전체 작업량 숫자
+- `YYYY-MM-DD HH:MM`: 마감 시각
+- `단위`: 선택 사항. 비우면 기본값은 `문장`
 
 ## 웹 UI에서 실험하기
 

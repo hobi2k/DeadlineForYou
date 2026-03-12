@@ -128,7 +128,7 @@ def chat(payload: ChatRequest):
         ChatResponse: 페르소나 답변과 규칙 엔진 메타데이터.
     """
     service: DeadlineCoachService = app.state.service
-    reply, evaluation = service.chat(payload.user_id, payload.message, payload.project_id)
+    reply, evaluation, executed_tools = service.chat(payload.user_id, payload.message, payload.project_id)
     return {
         "reply": reply,
         "mode": evaluation.mode,
@@ -136,6 +136,7 @@ def chat(payload: ChatRequest):
         "timer_minutes": evaluation.timer_minutes,
         "action_hint": evaluation.action_hint,
         "report_hint": evaluation.report_hint,
+        "executed_tools": executed_tools,
     }
 
 

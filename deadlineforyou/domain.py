@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
+from typing import Any
 
 
 class CoachingMode(StrEnum):
@@ -37,3 +38,16 @@ class RuleEvaluation:
     timer_minutes: int
     action_hint: str
     report_hint: str
+
+
+@dataclass(slots=True)
+class ToolCall:
+    id: str
+    name: str
+    arguments: dict[str, Any]
+
+
+@dataclass(slots=True)
+class GenerationResult:
+    text: str
+    tool_calls: list[ToolCall]

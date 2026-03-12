@@ -2,13 +2,16 @@ from __future__ import annotations
 
 from collections import Counter
 from datetime import UTC, datetime
+import json
 from sqlite3 import Row
+from typing import Any
 
 from deadlineforyou.domain import CoachingMode, RuleEvaluation
 from deadlineforyou.prompts import SYSTEM_PROMPT, build_context_block
 from deadlineforyou.providers import LLMProvider
 from deadlineforyou.rules import detect_avoidance, evaluate_mode
 from deadlineforyou.storage import Database
+from deadlineforyou.tools import build_bound_chat_tools
 
 
 def _row_to_dict(row: Row | None) -> dict | None:
@@ -145,7 +148,20 @@ class DeadlineCoachService:
         """
         return _row_to_dict(self.database.get_session(session_id))
 
-    def chat(self, user_id: int, message: str, project_id: int | None = None) -> tuple[str, RuleEvaluation]:
+    def get_active_project(self, user_id: int, project_id: int | None = None) -> dict | None:
+        """get_active_project
+
+        Args:
+            user_id: 내부 사용자 식별자.
+            project_id: 명시적 프로젝트 식별자. 없으면 active 프로젝트를 찾는다.
+
+        Returns:
+            dict | None: 활성 프로젝트 레코드 또는 None.
+        """
+        row = self.database.get_project(project_id) if project_id else self.database.get_active_project_for_user(user_id)
+        return _row_to_dict(row)
+
+    def chat(self, user_id: int, message: str, project_id: int | None = None) -> tuple[str, RuleEvaluation, list[str]]:
         """chat
 
         Args:
@@ -154,10 +170,9 @@ class DeadlineCoachService:
             project_id: 호출자가 명시적으로 넘긴 프로젝트 식별자.
 
         Returns:
-            tuple[str, RuleEvaluation]: 생성된 답변 문자열과 그 답변을 이끈 규칙 엔진 평가 결과.
+            tuple[str, RuleEvaluation, list[str]]: 생성된 답변, 규칙 엔진 평가 결과, 실행된 tool 이름 목록.
         """
-        project_row = self.database.get_project(project_id) if project_id else self.database.get_active_project_for_user(user_id)
-        project = _row_to_dict(project_row)
+        project = self.get_active_project(user_id, project_id)
 
         recent_avoidance_events = self.database.today_avoidance_events(user_id)
         evaluation = evaluate_mode(message, project, recent_avoidance_count=len(recent_avoidance_events))
@@ -176,9 +191,55 @@ class DeadlineCoachService:
 
         # 다음 턴에서 최근 문맥을 재사용할 수 있도록 사용자/봇 메시지를 모두 저장한다.
         self.database.add_message(user_id, project["id"] if project else None, "user", message)
-        reply = self.provider.generate(SYSTEM_PROMPT, context_block, history, message)
+        tools = build_bound_chat_tools(self, user_id, project["id"] if project else None)
+        tool_schemas = [tool.openai_schema() for tool in tools.values()] if self.provider.supports_tool_calling() else None
+        messages: list[dict[str, Any]] = [*history, {"role": "user", "content": message}]
+        executed_tools: list[str] = []
+        reply = ""
+
+        for _ in range(3):
+            result = self.provider.generate_turn(SYSTEM_PROMPT, context_block, messages, tool_schemas)
+            if result.tool_calls:
+                assistant_tool_calls = []
+                for tool_call in result.tool_calls:
+                    executed_tools.append(tool_call.name)
+                    assistant_tool_calls.append(
+                        {
+                            "id": tool_call.id,
+                            "type": "function",
+                            "function": {
+                                "name": tool_call.name,
+                                "arguments": json.dumps(tool_call.arguments, ensure_ascii=False),
+                            },
+                        }
+                    )
+                messages.append({"role": "assistant", "content": result.text or "", "tool_calls": assistant_tool_calls})
+
+                for tool_call in result.tool_calls:
+                    tool = tools.get(tool_call.name)
+                    if tool is None:
+                        payload = {"error": f"unknown_tool:{tool_call.name}"}
+                    else:
+                        try:
+                            payload = tool.execute(tool_call.arguments)
+                        except Exception as exc:  # noqa: BLE001
+                            payload = {"error": str(exc), "tool": tool_call.name}
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "content": json.dumps(payload, ensure_ascii=False),
+                        }
+                    )
+                continue
+
+            reply = result.text
+            break
+
+        if not reply:
+            reply = "도구 실행까진 했는데 아직 네 보고가 없다. 지금 상태를 짧게 다시 말해."
         self.database.add_message(user_id, project["id"] if project else None, "assistant", reply)
-        return reply, evaluation
+        return reply, evaluation, executed_tools
 
     def build_daily_report(self, user_id: int) -> dict:
         """build_daily_report
