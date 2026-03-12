@@ -38,6 +38,23 @@ TELEGRAM_CONNECT_TIMEOUT_SECONDS = 30
 TELEGRAM_POOL_TIMEOUT_SECONDS = 30
 
 
+def _sanitize_coach_text(text: str, max_lines: int = 5) -> str:
+    """_sanitize_coach_text
+
+    Args:
+        text: 모델이 생성한 원문 문자열.
+        max_lines: 허용할 최대 줄 수.
+
+    Returns:
+        str: 텔레그램 출력용으로 정리된 문자열.
+    """
+    cleaned = text.replace("*", "").replace("_", "")
+    lines = [line.strip() for line in cleaned.splitlines() if line.strip()]
+    if not lines:
+        return "지금 상태를 한 줄로 다시 보내라."
+    return "\n".join(lines[:max_lines])
+
+
 def build_service() -> DeadlineCoachService:
     """build_service
 
@@ -918,6 +935,21 @@ async def report_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
         return
 
+    existing_session = service.get_session(last_session_id)
+    if not existing_session:
+        context.user_data.pop("last_session_id", None)
+        await update.message.reply_text("세션을 찾지 못했다. 다시 /timer 로 새 세션부터 시작해라.")
+        return
+    if existing_session["status"] != "active":
+        context.user_data.pop("last_session_id", None)
+        if existing_session.get("reported_result") == "AUTO_REPORT_0":
+            await update.message.reply_text(
+                "이전 세션은 미보고로 0 처리되어 이미 닫혔다. 이제 /timer <분> 으로 새 세션을 시작해라."
+            )
+        else:
+            await update.message.reply_text("이전 세션은 이미 끝났다. /timer <분> 으로 새 세션을 시작해라.")
+        return
+
     if not context.args:
         await update.message.reply_text(
             "\n".join(
@@ -954,7 +986,7 @@ async def report_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 f"이번에 반영된 작업량: {completed_units}",
                 f"다음 권장 타이머: {evaluation.timer_minutes}분",
                 "",
-                reply,
+                _sanitize_coach_text(reply),
             ]
         )
     )
@@ -977,22 +1009,23 @@ async def send_session_followup(context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     user_id = session["user_id"]
+    completed_session = service.complete_session(
+        session_id=session_id,
+        result_text="AUTO_REPORT_0",
+        completed_units_delta=0,
+    )
     reply = await asyncio.to_thread(
         service.coach_nudge,
         user_id,
-        "타이머가 끝났는데 사용자가 아직 /report 완료 보고를 하지 않았다. 남은 분량을 의식하게 만들고 지금 바로 /report <작업량> 으로 보고하게 만드는 짧은 압박 메시지를 보내라.",
+        (
+            "타이머가 끝났는데 사용자가 아직 보고하지 않았다. "
+            "이번 세션은 방금 작업량 0으로 자동 마감 처리됐다. "
+            "이제 사용자는 보고를 다시 할 필요가 없다. "
+            "지금 바로 새 /timer <분> 을 시작하게 만드는 짧고 강한 압박 메시지를 보내라."
+        ),
         session.get("project_id"),
     )
-    await context.bot.send_message(chat_id=context.job.chat_id, text=reply)
-
-    if context.job_queue is not None:
-        context.job_queue.run_once(
-            send_session_followup,
-            when=600,
-            chat_id=context.job.chat_id,
-            data={"session_id": session_id},
-            name=f"session-followup-{session_id}-{datetime.now().timestamp()}",
-        )
+    await context.bot.send_message(chat_id=context.job.chat_id, text=_sanitize_coach_text(reply))
 
 
 async def send_session_progress_reminder(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1028,7 +1061,7 @@ async def send_session_progress_reminder(context: ContextTypes.DEFAULT_TYPE) -> 
         ),
         session.get("project_id"),
     )
-    await context.bot.send_message(chat_id=context.job.chat_id, text=reply)
+    await context.bot.send_message(chat_id=context.job.chat_id, text=_sanitize_coach_text(reply))
 
 
 async def text_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1097,7 +1130,7 @@ async def text_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     sanitized_reply = "\n".join(
         line for line in reply.splitlines() if "파일 경로:" not in line and "data/generated_images/" not in line
     ).strip()
-    await update.message.reply_text(sanitized_reply or "지금 상태를 한 번만 더 짧게 보내라.")
+    await update.message.reply_text(_sanitize_coach_text(sanitized_reply or "지금 상태를 한 번만 더 짧게 보내라."))
 
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
