@@ -2,9 +2,30 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from deadlineforyou.domain import SessionStatus
+
+
+SUPPORTED_LANGUAGE_CODES = {"ko", "jp", "en", "ch"}
+
+
+def _normalize_language_code(value: str) -> str:
+    """_normalize_language_code
+
+    Args:
+        value: 입력된 언어 코드 문자열.
+
+    Returns:
+        str: 정규화된 언어 코드.
+    """
+    normalized = value.strip().lower()
+    aliases = {
+        "ja": "jp",
+        "zh": "ch",
+        "cn": "ch",
+    }
+    return aliases.get(normalized, normalized)
 
 
 class UserCreate(BaseModel):
@@ -26,12 +47,28 @@ class UserResponse(BaseModel):
 class ProjectCreate(BaseModel):
     user_id: int
     title: str
-    source_language: str = "ja"
+    source_language: str = "jp"
     target_language: str = "ko"
     total_units: int = Field(gt=0)
     completed_units: int = 0
     deadline_at: datetime
     unit_label: str = "문장"
+
+    @field_validator("source_language", "target_language")
+    @classmethod
+    def validate_language_code(cls, value: str) -> str:
+        """validate_language_code
+
+        Args:
+            value: 입력된 언어 코드 문자열.
+
+        Returns:
+            str: 검증이 끝난 언어 코드.
+        """
+        normalized = _normalize_language_code(value)
+        if normalized not in SUPPORTED_LANGUAGE_CODES:
+            raise ValueError("지원 언어 코드는 ko, jp, en, ch만 가능하다.")
+        return normalized
 
 
 class ProjectUpdate(BaseModel):
@@ -65,6 +102,7 @@ class ChatResponse(BaseModel):
     reply: str
     timer_minutes: int
     executed_tools: list[str] = []
+    tool_results: dict[str, dict] = {}
 
 
 class SessionCreate(BaseModel):
@@ -102,9 +140,25 @@ class DailyReportResponse(BaseModel):
 
 class TranslateRequest(BaseModel):
     text: str
-    source_language: str = "ja"
+    source_language: str = "jp"
     target_language: str = "ko"
     style: str = "natural"
+
+    @field_validator("source_language", "target_language")
+    @classmethod
+    def validate_language_code(cls, value: str) -> str:
+        """validate_language_code
+
+        Args:
+            value: 입력된 언어 코드 문자열.
+
+        Returns:
+            str: 검증이 끝난 언어 코드.
+        """
+        normalized = _normalize_language_code(value)
+        if normalized not in SUPPORTED_LANGUAGE_CODES:
+            raise ValueError("지원 언어 코드는 ko, jp, en, ch만 가능하다.")
+        return normalized
 
 
 class TranslateResponse(BaseModel):

@@ -15,17 +15,17 @@
 - 번역 / 이미지 생성 흐름
 - 현재 제약과 운영 포인트
 
-이 문서는 설계 아이디어 모음이 아니라, 지금 코드가 실제로 어떻게 돌아가는지 정리한 구현 문서다.
+이 문서는 아이디어 문서가 아니라, 지금 코드가 실제로 어떻게 돌아가는지 정리한 구현 문서다.
 
 ## 2. 시스템 개요
 
-`DeadlineForYou`는 프리랜서 번역가의 회피를 줄이고, 프로젝트 상태를 보면서 즉시 행동 지시를 내리는 로컬 마감 집행 시스템이다.
+`DeadlineForYou`는 프리랜서 번역가의 프로젝트 상태를 보면서 즉시 행동 지시를 내리는 로컬 마감 집행 시스템이다.
 
 핵심 동작:
 
 1. 사용자 메시지 수신
-2. 현재 프로젝트와 회피 상태 계산
-3. 규칙 엔진으로 모드 판정
+2. 현재 활성 프로젝트 조회
+3. 최근 대화와 프로젝트 상태 조합
 4. `締切監督` 페르소나 답변 생성
 5. 필요하면 내부 tool 호출
 6. 세션 / 진행량 / 리포트에 반영
@@ -48,11 +48,10 @@ User
          v
   DeadlineCoachService
          |
-         +─ Rule Engine
          +─ Prompt Builder
-         +─ LLM Provider
-         +─ Translation Provider
-         +─ Image Provider
+         +─ Local Coach Provider
+         +─ Local Translation Provider
+         +─ Local Image Provider
          +─ SQLite Storage
 ```
 
@@ -86,12 +85,12 @@ deadlineforyou/
 - `telegram_bot.py`: polling 기반 Telegram bot
 - `service.py`: 핵심 오케스트레이터
 - `storage.py`: SQLite 영속 계층
-- `rules.py`: 회피 감지 / 모드 평가
+- `rules.py`: 기본 권장 타이머 계산
 - `prompts.py`: 시스템 프롬프트와 컨텍스트 조립
 - `providers.py`: 코칭 / 번역 / 이미지 provider
 - `tools.py`: 내부 tool registry
 - `schemas.py`: API 요청 / 응답 스키마
-- `domain.py`: enum, dataclass 등 도메인 타입
+- `domain.py`: dataclass 등 도메인 타입
 - `config.py`: 환경 변수 설정
 
 ## 5. 실행 구조
@@ -118,10 +117,10 @@ deadlineforyou/
 역할:
 
 - 텔레그램 사용자 자동 등록
-- 세션 명령 처리
 - 프로젝트 등록 명령 처리
+- 타이머 시작 / 보고 처리
 - 코칭 / 번역 / 이미지 생성 호출
-- 후속 보고 알림
+- 10분 진행 압박과 미보고 재촉 스케줄링
 
 ### 5.3 공용 의존성
 
@@ -223,8 +222,10 @@ deadlineforyou/
 - `reply`
 - `timer_minutes`
 - `executed_tools`
+- `tool_results`
 
-`executed_tools`는 내부 tool calling 루프에서 실제 실행된 도구 이름 목록이다.
+`executed_tools`는 내부 tool calling 루프에서 실제 실행된 도구 이름 목록이다.  
+`tool_results`는 번역, 이미지 생성 같은 실행 결과를 담는다.
 
 ## 8. 데이터베이스 구조
 
@@ -292,6 +293,8 @@ DB 엔진:
 - `cancelled`
 - `expired`
 
+`mode` 컬럼은 현재 사실상 `timer` 값을 저장하는 단순 구분용이다.
+
 ### messages
 
 - `id`
@@ -305,374 +308,272 @@ DB 엔진:
 
 - 최근 대화 이력 재주입
 
-### avoidance_events
+## 9. 서비스 계층 구조
 
-- `id`
-- `user_id`
-- `project_id`
-- `trigger_text`
-- `category`
-- `severity`
-- `created_at`
+핵심 파일:
 
-용도:
+- `deadlineforyou/service.py`
 
-- 과거 회피 기록 보관
-- 일일 리포트 보강용 잔존 데이터
+`DeadlineCoachService`의 역할:
 
-## 9. 도메인 구조
+- 사용자와 프로젝트 조회
+- 최근 대화 기록 적재
+- 권장 타이머 계산
+- 코칭 프롬프트 조립
+- 내부 tool 실행 루프 처리
+- 번역 / 이미지 생성 오케스트레이션
+- 세션 완료 후 진행량 반영
 
-정의 파일:
+## 10. 규칙 엔진
 
-- `deadlineforyou/domain.py`
-
-### 코칭 상태 표현
-
-현재 구현은 복잡한 이름의 모드 enum을 외부에 드러내지 않는다.
-
-핵심 구분:
-
-- `normal`: 일반 코칭 응답
-- `urgent`: 마감 압박이 강한 응답
-- `timer`: 사용자가 직접 시작한 수동 세션
-
-### SessionStatus
-
-- `active`
-- `completed`
-- `cancelled`
-- `expired`
-
-### RuleEvaluation
-
-포함 필드:
-
-- `timer_minutes`
-
-## 10. 규칙 엔진 구조
-
-파일:
+핵심 파일:
 
 - `deadlineforyou/rules.py`
 
-역할:
+현재 규칙 엔진은 단순하다.
 
-- 회피 표현 감지
-- 마감 압박 계산
-- 기본 타이머 길이 제안
+입력:
 
-주요 감지 표현:
+- 활성 프로젝트의 마감 시각
+- 총량 대비 완료량
 
-- `하기 싫`
-- `귀찮`
-- `나중`
-- `내일`
-- `졸려`
-- `피곤`
-- `유튜브`
-- `도망`
-- `못 하겠`
+출력:
 
-기본 판정:
+- `timer_minutes`
 
-- 마감 6시간 이내면 더 강한 압박 응답과 25분 권장 타이머
-- 강한 회피는 더 작은 행동 단위 제시
-- 피로 표현은 복구형 지시
-- 누적 회피가 많으면 현실 경고 강화
+기본 기준:
 
-세션 명령과의 연결:
+- 마감이 `6시간 이하`면 `25`
+- 완료율이 낮으면 `15`
+- 그 외는 `10`
 
-- `/timer <25` -> 주로 `timer`
-- `/timer >=25` -> 주로 `urgent`
+중요:
 
-의도 차이:
-
-- 현재 텔레그램 수동 세션은 `/timer <분>` 하나로 단순화했다.
-- 사용자는 시간만 정하고, 내부 저장 시에만 세션 mode를 나눈다.
+- 회피 패턴 매칭은 더 이상 없다.
+- 긴급도 점수도 없다.
+- 복잡한 모드 분기는 없다.
+- 사용자의 저항감이나 피로감은 LLM이 대화 문맥으로 직접 판단한다.
 
 ## 11. 프롬프트 구조
 
-파일:
+핵심 파일:
 
 - `deadlineforyou/prompts.py`
 
-핵심:
+프롬프트에 들어가는 정보:
 
-- `SYSTEM_PROMPT`
-- `build_context_block(...)`
+- 시스템 페르소나
+- 현재 프로젝트 상태
+- 남은 분량
+- 최근 대화
+- 권장 타이머
+- 필요한 경우 tool 사용 지시
 
-`SYSTEM_PROMPT`는 `締切監督` 페르소나 정의를 담고, `build_context_block`은 아래 정보를 텍스트 블록으로 조립한다.
-
-- 사용자 상태
-- 프로젝트 상태
-- 규칙 엔진 힌트
+프롬프트는 `締切監督` 톤을 유지하되, 답변 끝을 행동 지시로 마무리하도록 유도한다.
 
 ## 12. Provider 구조
 
-파일:
+핵심 파일:
 
 - `deadlineforyou/providers.py`
 
+현재 provider는 세 갈래다.
+
 ### 12.1 코칭 provider
 
-공통 인터페이스:
+역할:
 
-- `LLMProvider`
+- 일반 대화 응답 생성
+- 10분 진행 압박 생성
+- 미보고 재촉 생성
+- `/report` 이후 다음 지시 생성
 
-구현체:
+기본 모델:
 
-- `LocalLLMProvider`
-- `ScriptedFallbackProvider`
+- `saya_rp_4b_v3`
 
-`LocalLLMProvider` 특징:
+대체 모델:
 
-- `saya_rp_4b_v3` 사용
-- 필요하면 `qwen3_4b_instruct` 같은 대체 Qwen 체크포인트로 교체 가능
-- `Qwen` 계열 chat template 적용
-- tool calling 결과 파싱 지원
+- `Qwen3-4B-Instruct-2507`
 
 ### 12.2 번역 provider
 
-공통 인터페이스:
+역할:
 
-- `TranslationProvider`
+- `/translate`
+- API `POST /translate`
+- 내부 tool calling 번역 호출
 
-구현체:
-
-- `LazyLocalTranslationProvider`
-- `InheritedTranslationProvider`
-- `ScriptedTranslationProvider`
-
-현재 기본 번역 provider:
+기본 모델:
 
 - `rosetta_4b`
 
 특징:
 
 - lazy loading
-- `Gemma3` 계열 체크포인트 대응
-- tokenizer fallback 포함
-- `token_type_ids` 제거 처리 포함
+- 코칭 모델과 분리
 
 ### 12.3 이미지 provider
 
-공통 인터페이스:
+역할:
 
-- `ImageProvider`
+- `/image`
+- API `POST /images/generate`
+- 내부 tool calling 이미지 호출
 
-구현체:
+기본 모델:
 
-- `LocalSDXLTurboProvider`
-- `NullImageProvider`
-
-현재 기본 이미지 provider:
-
-- `SDXL-Turbo`
+- `sdxl_turbo`
 
 특징:
 
 - lazy loading
 - 생성 후 unload 가능
 - CPU offload 지원
-- 기본 생성값: `512x512`, `4 step`
 
-## 13. 서비스 계층 구조
+## 13. 내부 Tool Calling
 
-파일:
-
-- `deadlineforyou/service.py`
-
-`DeadlineCoachService` 역할:
-
-- 데이터 조회 / 저장
-- 회피 이벤트 기록
-- 규칙 엔진 호출
-- 프롬프트 컨텍스트 구성
-- provider 호출
-- 세션 / 리포트 집계
-
-### 13.1 주요 메서드
-
-- `create_user`
-- `get_or_create_user`
-- `create_project`
-- `list_projects`
-- `update_project`
-- `start_session`
-- `complete_session`
-- `get_session`
-- `get_active_project`
-- `chat`
-- `build_daily_report`
-- `translate_text`
-- `generate_image`
-
-### 13.2 `chat()` 흐름
-
-1. 활성 프로젝트 조회
-2. 최근 회피 이벤트 조회
-3. 규칙 평가
-4. 회피 이벤트 저장
-5. 최근 메시지 이력 조회
-6. 사용자 / 프로젝트 / 규칙 스냅샷 구성
-7. 컨텍스트 블록 생성
-8. 사용자 메시지 저장
-9. 내부 tool registry 구성
-10. provider 호출
-11. tool call 있으면 실행 후 다시 provider 호출
-12. 최종 답변 저장
-
-즉, 단순 LLM 호출이 아니라 상태 기반 루프다.
-
-## 14. 내부 tool calling 구조
-
-파일:
+핵심 파일:
 
 - `deadlineforyou/tools.py`
 
-용도:
+현재 내부 tool 예시:
 
-- 코칭 모델이 내부 도구를 호출할 수 있게 함
+- 활성 프로젝트 조회
+- 프로젝트 목록 조회
+- 일일 리포트 조회
+- 번역 실행
+- 이미지 생성 실행
 
-현재 채팅 바인딩 도구 예:
+역할:
 
-- `get_active_project`
-- `list_projects`
-- `start_focus_session`
-- `complete_focus_session`
-- `get_daily_report`
-- `translate_text`
-- `generate_image`
+- 대화 모델이 필요할 때 구조화된 함수를 호출
+- 텍스트 응답과 실제 작업 실행을 분리
 
-이 구조는 외부 프로토콜용이 아니라, 현재 서비스 내부 루프 전용이다.
+## 14. Telegram bot 구조
 
-## 15. Telegram bot 구조
-
-파일:
+핵심 파일:
 
 - `deadlineforyou/telegram_bot.py`
 
-실행 방식:
-
-- polling
-
-### 15.1 시작 시 구성
-
-`build_application()`에서:
-
-1. 텔레그램 토큰 확인
-2. `Application` 생성
-3. 공용 `DeadlineCoachService` 생성
-4. 명령 핸들러 등록
-5. 에러 핸들러 등록
-
-### 15.2 명령
+### 14.1 주요 명령
 
 - `/start`
 - `/help`
 - `/deadline_add`
 - `/deadline_list`
 - `/status`
-- `/translate`
-- `/image`
 - `/timer`
 - `/report`
+- `/translate`
+- `/image`
 
-### 15.3 버튼 UX
+### 14.2 버튼 구조
 
-하단 키보드는 혼합 구조다.
+현재 버튼:
 
-- 즉시 실행 버튼
-  - `/deadline_list`
-  - `/status`
-  - `/help`
-- 안내 버튼
-  - `프로젝트 등록 양식`
-  - `타이머 시작 양식`
-  - `번역 양식`
-  - `이미지 양식`
+1. `프로젝트 등록 양식`
+2. `/deadline_list`
+3. `/status`
+4. `/help`
+5. `타이머 시작 양식`
+6. `/report`
+7. `번역 양식`
+8. `이미지 양식`
 
-안내 버튼을 누르면 예시 커맨드를 메시지로 보내준다.  
-입력창 자동 채우기는 일반 텔레그램 봇에서 지원하지 않기 때문에 현재 구조는 `예시 안내 -> 복사 수정` 흐름이다.
+원칙:
 
-이 설계 이유:
+- 바로 실행 가능한 기능은 명령 버튼으로 둔다.
+- 인자가 필요한 기능은 예시 메시지를 먼저 보여준다.
+- 사용자는 그 예시를 복사해 수정해서 보낸다.
+- 자세한 설명은 `/help`에 모은다.
 
-- `/deadline_add`, `/timer`, `/translate`, `/image`는 인자가 없으면 실행 의미가 약하다.
-- 그래서 버튼은 "바로 실행"보다 "올바른 형식을 보여주는 빠른 진입점" 역할을 맡는다.
+프로젝트 등록은 두 경로를 모두 지원한다.
 
-### 15.4 안정성 처리
+- `/deadline_add ...` 명령으로 등록
+- `제목 | 원문 언어 | 목표 언어 | 총량 | 마감 | 단위` 형식의 일반 텍스트를 그대로 보내서 등록
 
-- 로컬 무거운 작업은 `asyncio.to_thread(...)` 사용
-- 이미지 업로드 timeout 확장
-- `sendPhoto` timeout 시 파일 경로를 텍스트로 반환
-- 전역 에러 핸들러에서 사용자 메시지와 로그를 남김
+지원 언어 코드는 `ko`, `jp`, `en`, `ch`만 허용한다.
 
-### 15.5 세션 알림
+### 14.3 타이머 동작
 
-`JobQueue` 사용 시:
+- `/timer <분>`으로 세션 시작
+- 세션이 10분 이상이면 10분마다 진행 압박 메시지 전송
+- 세션 종료 시 보고 요청
+- 사용자가 `/report`를 보내지 않으면 10분마다 다시 재촉
+- `/report`는 숫자 인자를 필수로 받는다.
 
-- 세션 종료 후 `/report` 유도 메시지 전송
+진행 압박과 미보고 재촉은 현재 고정 문자열이 아니라 코칭 모델이 생성한다.
 
-주의:
+### 14.4 텔레그램 자연어 대화
 
-- 프로세스 재시작 시 메모리 기반 예약은 사라질 수 있다.
+일반 텍스트가 들어오면:
 
-## 16. 사용자 흐름
+1. `service.chat()` 호출
+2. 내부 tool이 실행될 수 있음
+3. 이미지 생성 tool 결과가 있으면 실제 사진 먼저 업로드
+4. 그 다음 코치 텍스트 응답 전송
 
-### 16.1 API 흐름
+## 15. 번역 흐름
 
-```text
-POST /users
- -> POST /projects
- -> POST /chat
- -> POST /sessions
- -> POST /sessions/{id}/complete
- -> GET /users/{id}/daily-report
-```
+### Telegram
 
-### 16.2 Telegram 흐름
+1. `/translate <원문>` 수신
+2. 번역 provider 호출
+3. 번역 결과 텍스트 반환
 
-```text
-/start
- -> 프로젝트 등록 양식 버튼 확인
- -> /deadline_add ...
- -> /status
- -> 타이머 시작 양식 버튼 확인
- -> /timer 25
- -> /report 8
- -> 필요하면 /translate ...
- -> 필요하면 /image ...
-```
+### API
 
-### 16.3 이미지 생성 흐름
+1. `POST /translate`
+2. 번역 provider 호출
+3. JSON 응답 반환
 
-```text
-/image or POST /images/generate
- -> 필요 시 번역 모델 unload
- -> SDXL-Turbo lazy load
- -> 이미지 생성
- -> PNG 저장
- -> Telegram 전송 또는 file_path 반환
- -> 필요 시 이미지 모델 unload
-```
+## 16. 이미지 생성 흐름
 
-## 17. 현재 장점
+### Telegram
 
-- API와 Telegram이 같은 서비스 계층을 공유한다.
-- 코칭 / 번역 / 이미지 provider를 분리해 메모리 제어가 가능하다.
-- SQLite 하나로 상태를 단순하게 관리한다.
-- 규칙 엔진과 생성 모델을 결합해 말투와 행동 지시를 분리한다.
+1. `/image <프롬프트>` 수신
+2. 생성 시작 안내 메시지 전송
+3. 이미지 provider 호출
+4. 생성 완료 후 실제 사진 업로드
+5. 업로드 timeout 시 파일 경로 텍스트 fallback
 
-## 18. 현재 한계
+### 자연어 tool 호출
 
-- SQLite 기반이라 단일 인스턴스 운영에 가깝다.
-- 텔레그램 입력창 자동 채우기는 지원하지 않는다.
+1. 사용자가 일반 대화에서 이미지 생성을 요청
+2. 내부 tool이 `generate_image` 실행
+3. `tool_results`에 파일 경로 저장
+4. Telegram 핸들러가 실제 이미지를 업로드
+
+### API
+
+1. `POST /images/generate`
+2. 이미지 provider 호출
+3. 생성 파일 경로와 메타데이터 반환
+
+## 17. 일일 리포트
+
+현재 리포트는 단순하다.
+
+반환 정보:
+
+- 날짜
+- 집중 시간
+- 완료량
+- 요약 문장
+
+즉, 복잡한 심리 통계 대신 실제 작업량 위주로 정리한다.
+
+## 18. 현재 제약
+
+- 텔레그램 일반 버튼은 입력창 자동 채우기를 지원하지 않는다.
+- 로컬 번역과 이미지 생성은 첫 호출 시 로딩 시간이 있다.
 - 로컬 이미지 생성은 여전히 느릴 수 있다.
-- Telegram JobQueue 알림은 프로세스 재시작에 취약하다.
-- 번역 모델 로딩은 체크포인트 특성상 환경 차이에 민감하다.
+- API와 Telegram을 동시에 띄우고 이미지까지 쓰면 메모리가 빡빡해질 수 있다.
 
-## 19. 운영 시 권장 사항
+## 19. 운영 포인트
 
-- GPU 메모리가 빡빡하면 API와 Telegram을 동시에 띄우지 않는다.
-- 이미지 테스트는 `512x512`, `4 step` 기본값을 유지한다.
-- 텔레그램 사용자 경험 설명은 `/help`에 모으고, 버튼은 빠른 진입용으로만 쓴다.
+- 실제 사용 채널은 Telegram이다.
+- 기능 확인과 디버깅 채널은 FastAPI Swagger다.
+- 코칭은 LLM이 대화 맥락으로 판단하고, 코드 쪽은 프로젝트 상태와 세션 루프를 관리한다.
+- 타이머 이후 재촉 루프가 핵심 사용 흐름이다.

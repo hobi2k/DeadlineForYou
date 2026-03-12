@@ -173,7 +173,12 @@ class DeadlineCoachService:
         row = self.database.get_project(project_id) if project_id else self.database.get_active_project_for_user(user_id)
         return _row_to_dict(row)
 
-    def chat(self, user_id: int, message: str, project_id: int | None = None) -> tuple[str, RuleEvaluation, list[str]]:
+    def chat(
+        self,
+        user_id: int,
+        message: str,
+        project_id: int | None = None,
+    ) -> tuple[str, RuleEvaluation, list[str], dict[str, dict[str, Any]]]:
         """chat
 
         Args:
@@ -182,7 +187,8 @@ class DeadlineCoachService:
             project_id: 호출자가 명시적으로 넘긴 프로젝트 식별자.
 
         Returns:
-            tuple[str, RuleEvaluation, list[str]]: 생성된 답변, 규칙 엔진 평가 결과, 실행된 tool 이름 목록.
+            tuple[str, RuleEvaluation, list[str], dict[str, dict[str, Any]]]:
+                생성된 답변, 규칙 엔진 평가 결과, 실행된 tool 이름 목록, tool 결과 맵.
         """
         project = self.get_active_project(user_id, project_id)
 
@@ -203,6 +209,7 @@ class DeadlineCoachService:
         tool_schemas = [tool.tool_call_schema() for tool in tools.values()] if self.provider.supports_tool_calling() else None
         messages: list[dict[str, Any]] = [*history, {"role": "user", "content": message}]
         executed_tools: list[str] = []
+        tool_results: dict[str, dict[str, Any]] = {}
         reply = ""
 
         for _ in range(3):
@@ -232,6 +239,7 @@ class DeadlineCoachService:
                             payload = tool.execute(tool_call.arguments)
                         except Exception as exc:  # noqa: BLE001
                             payload = {"error": str(exc), "tool": tool_call.name}
+                    tool_results[tool_call.name] = payload
                     messages.append(
                         {
                             "role": "tool",
@@ -247,7 +255,7 @@ class DeadlineCoachService:
         if not reply:
             reply = "도구 실행까진 했는데 아직 네 보고가 없다. 지금 상태를 짧게 다시 말해."
         self.database.add_message(user_id, project["id"] if project else None, "assistant", reply)
-        return reply, evaluation, executed_tools
+        return reply, evaluation, executed_tools, tool_results
 
     def coach_nudge(self, user_id: int, message: str, project_id: int | None = None) -> str:
         """coach_nudge
@@ -300,7 +308,7 @@ class DeadlineCoachService:
     def translate_text(
         self,
         text: str,
-        source_language: str = "ja",
+        source_language: str = "jp",
         target_language: str = "ko",
         style: str = "natural",
     ) -> dict:

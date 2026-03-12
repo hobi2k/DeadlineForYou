@@ -2,20 +2,18 @@
 
 # DeadlineForYou
 
-`DeadlineForYou`는 프리랜서 번역가를 작업 화면으로 다시 밀어 넣는 로컬 마감 집행 시스템이다.  
-핵심 캐릭터는 마감 집행관 `締切監督`이며, 목표는 위로가 아니라 `즉시 착수`다.
+`DeadlineForYou`는 프리랜서 번역가를 다시 작업 화면으로 밀어 넣는 로컬 마감 집행 시스템이다.  
+핵심 캐릭터는 마감 집행관 `締切監督`이고, 목표는 위로가 아니라 `즉시 착수`다.
 
 현재 구현 범위:
 
 - FastAPI 백엔드
 - Telegram bot 어댑터
 - SQLite 저장소
-- 상태 기반 코칭 채팅
+- 로컬 코칭 모델
+- 로컬 번역 모델
+- 로컬 이미지 생성 모델
 - 내부 tool calling 루프
-- 프로젝트 등록 / 수정 / 조회
-- 작업 세션 시작 / 완료 / 일일 리포트
-- 로컬 번역 모델 연동
-- 로컬 이미지 생성 모델 연동
 
 ## 구성 요약
 
@@ -38,9 +36,10 @@ User
          v
   DeadlineCoachService
          |
-         +─ Rule Engine
          +─ Prompt Builder
-         +─ Local Providers
+         +─ Local Coach Provider
+         +─ Local Translation Provider
+         +─ Local Image Provider
          +─ SQLite Storage
 ```
 
@@ -165,49 +164,53 @@ DFY_IMAGE_OUTPUT_DIR=data/generated_images
 
 ## 시스템이 어떻게 동작하는가
 
-`DeadlineForYou`는 단순한 채팅 봇이 아니다.  
-사용자 메시지, 프로젝트 마감, 현재 진행률, 오늘 회피 횟수를 같이 보고 다음 행동을 정한다.
+이 시스템은 단순한 채팅 봇이 아니다.  
+현재 프로젝트 상태와 최근 대화를 같이 보고, 지금 바로 할 행동을 정한다.
 
 기본 흐름:
 
 1. 사용자 메시지를 받는다.
 2. 현재 활성 프로젝트를 찾는다.
-3. 회피 표현이 있는지 감지한다.
-4. 마감까지 남은 시간과 진행률을 계산한다.
-5. 규칙 엔진이 현재 코칭 모드를 고른다.
-6. `締切監督` 페르소나가 그 모드에 맞는 답변을 만든다.
-7. 필요하면 내부 도구를 호출해 세션 시작, 리포트 조회, 번역, 이미지 생성을 수행한다.
+3. 남은 분량과 마감 시각을 확인한다.
+4. 최근 대화와 프로젝트 상태를 프롬프트에 넣는다.
+5. `締切監督`가 답변을 생성한다.
+6. 필요하면 내부 도구를 호출해 세션 시작, 번역, 이미지 생성, 리포트 조회를 수행한다.
 
-즉, 이 시스템은 `대화 + 상태판단 + 행동 지시 + 기록`을 한 번에 묶어 둔 구조다.
+즉, 이 시스템은 `대화 + 상태 확인 + 행동 지시 + 기록`을 한 번에 묶어 둔 구조다.
 
-## 코칭 응답은 이렇게 달라진다
+## 핵심 사용 흐름
 
-현재 시스템은 복잡한 모드 이름을 드러내지 않는다.  
-대신 상황에 따라 답변 강도와 권장 타이머가 달라진다.
+가장 기본적인 사용 순서는 이렇다.
 
-대표적으로:
+1. 프로젝트 등록
+2. `/status`로 현재 상태 확인
+3. `/timer <분>`으로 작업 세션 시작
+4. 세션 도중 10분마다 압박 메시지 수신
+5. 세션 종료 후 `/report <작업량>`으로 완료 보고
+6. 봇이 다음 지시를 다시 내림
 
-- 마감이 멀면 짧은 착수 지시
-- 회피 표현이 강하면 더 작은 작업 단위 제시
-- 피로 표현이 있으면 조금 더 짧고 복구 중심의 지시
-- 마감이 `6시간 이하`면 더 강한 압박과 `25분` 권장 타이머
+프로젝트 등록은 두 방식 모두 가능하다.
 
-즉, 사용자가 외워야 하는 건 모드 이름이 아니라 `지금 바로 뭘 하면 되는지`다.
+- 명령으로 등록: `/deadline_add 게임 시나리오 번역 | jp | ko | 120 | 2026-03-14 18:00 | 문장`
+- 줄만 보내서 등록: `게임 시나리오 번역 | jp | ko | 120 | 2026-03-14 18:00 | 문장`
 
-## 자동 응답 규칙
+지원 언어 코드는 `ko`, `jp`, `en`, `ch`만 받는다.  
+`ja`는 `jp`, `zh`와 `cn`은 `ch`로 자동 정규화한다.
 
-현재 규칙 엔진 기준으로는 아래처럼 동작한다.
+프로젝트 등록 항목 뜻:
 
-- 마감 `6시간 이하`면 더 강한 압박 답변과 `25분` 권장 타이머
-- 회피 표현이 강하면 더 작은 행동 단위를 제시
-- 피로 표현이면 조금 더 짧은 복구형 지시를 제시
-- 오늘 회피 기록이 많으면 현실적인 경고를 더 강하게 붙인다
+- `게임 시나리오 번역`: 프로젝트 제목
+- `jp`: 원문 언어
+- `ko`: 목표 언어
+- `120`: 프로젝트 전체 분량
+- `2026-03-14 18:00`: 이 프로젝트의 최종 마감 시각
+- `문장`: 분량 단위
 
-즉, 사용자가 어떤 기분인지뿐 아니라 `실제 마감 압박`도 같이 본다.
+즉 여기 들어가는 시간은 `/timer` 시간이 아니라 `프로젝트 마감 시간`이다.
 
-## 세션은 `/timer` 하나로 쓴다
+## 타이머와 보고 구조
 
-수동 세션은 고정 명령 여러 개 대신 `/timer <분>` 하나로 정리했다.
+수동 세션은 `/timer <분>` 하나만 쓴다.
 
 예:
 
@@ -218,39 +221,103 @@ DFY_IMAGE_OUTPUT_DIR=data/generated_images
 동작:
 
 1. 지정한 분 수로 세션 생성
-2. 시간이 끝나면 알림 전송
-3. 사용자는 `/report <작업량>`으로 결과 보고
-4. 보고 숫자가 프로젝트 진행량에 반영
+2. 세션이 10분 이상이면 10분마다 압박 메시지 전송
+3. 세션 종료 시 `/report <작업량>` 보고 요청
+4. 사용자가 보고하지 않으면 10분마다 다시 재촉
+5. 사용자가 `/report`를 보내면 완료량이 프로젝트에 반영되고 다음 지시가 생성됨
 
-사용 기준:
+`/report` 숫자 뜻:
 
-- 빨리 착수만 만들고 싶다 -> `/timer 10`
-- 보통 집중 블록이 필요하다 -> `/timer 25`
-- 길게 몰아치고 싶다 -> `/timer 45`
+- `/report 8`이면 이번 세션에서 `8단위`를 끝냈다는 뜻이다.
+- 여기서 단위는 프로젝트 등록 때 넣은 `문장`, `페이지`, `줄` 같은 단위다.
+- 숫자가 없으면 완료 보고로 처리하지 않는다.
 
 중요한 점:
 
-- 이제 예전의 고정 타이머 명령을 외울 필요가 없다.
-- 수동 세션은 그냥 “몇 분 할지”만 정하면 된다.
-- 긴 세션은 내부적으로 더 강한 세션 모드로 저장될 수 있지만, 사용자 입장에서는 `/timer`만 쓰면 된다.
+- 예전의 `/start10`, `/start15`, `/pomodoro` 같은 고정 명령은 없다.
+- 사용자는 그냥 몇 분 할지만 정하면 된다.
+- 중간 압박과 미보고 재촉도 지금은 LLM이 만든다.
 
-## 텔레그램 버튼을 왜 이렇게 만들었는가
+## 코칭 모델은 언제 호출되는가
 
-하단 버튼은 두 역할로 나뉜다.
+코칭 모델은 아래 경우에만 호출된다.
 
-- 즉시 실행 버튼
-- 양식 안내 버튼
+- 일반 텔레그램 대화
+- API `POST /chat`
+- 10분 진행 알림
+- 세션 종료 후 미보고 재촉
+- `/report` 후 다음 지시 생성
 
-인자가 필요한 명령은 입력창 자동 채우기가 아니라 예시 메시지를 보여준다.  
-이건 현재 텔레그램 일반 봇의 UI 제약 때문이다.
+반대로 코칭 모델을 쓰지 않는 곳:
 
-현재 안내 버튼:
+- `/timer` 시작 확인
+- `/status`
+- `/deadline_add`, `/deadline_list`
+- `/translate`
+- `/image`
 
-- `프로젝트 등록 양식`
-- `번역 양식`
-- `이미지 양식`
+즉, 코칭 모델은 평상 대화만이 아니라 `압박 메시지`와 `다음 지시` 생성에도 들어간다.
 
-버튼을 누르면 “이 형식으로 보내라”는 예시가 오고, 사용자는 그 줄을 복사해서 수정해 보내는 구조다.
+## 번역과 이미지 생성
+
+이 시스템은 코칭 외에도 짧은 번역과 이미지 생성을 처리할 수 있다.
+
+### 번역
+
+- Telegram: `/translate <원문>`
+- API: `POST /translate`
+
+코칭 모델과 별도로 `rosetta_4b`를 사용한다.
+
+### 이미지 생성
+
+- Telegram: `/image <프롬프트>`
+- API: `POST /images/generate`
+
+이미지 요청은 `sdxl_turbo`를 사용한다.  
+텔레그램 자연어 대화에서 이미지 생성 도구가 실행되면, 파일 경로만 보내는 게 아니라 실제 이미지를 업로드한다.
+
+## 텔레그램 사용법
+
+`/start`를 누르면 하단 버튼이 보인다.
+
+현재 버튼:
+
+1. `프로젝트 등록 양식`
+2. `/deadline_list`
+3. `/status`
+4. `/help`
+5. `타이머 시작 양식`
+6. `/report`
+7. `번역 양식`
+8. `이미지 양식`
+
+버튼은 두 종류다.
+
+- 바로 실행하는 버튼: `/deadline_list`, `/status`, `/help`, `/report`
+- 예시를 보여주는 버튼: `프로젝트 등록 양식`, `타이머 시작 양식`, `번역 양식`, `이미지 양식`
+
+예시 버튼은 직접 실행하지 않고 형식을 보여준다.  
+사용자는 그 예시를 복사해서 필요한 부분만 바꿔 보내면 된다.
+
+처음 쓰는 사람 기준으로는 이렇게 보면 된다.
+
+- `프로젝트 등록 양식`: 프로젝트 추가 예시 한 줄을 보여준다.
+- `/deadline_list`: 내가 등록한 프로젝트 목록을 보여준다.
+- `/status`: 현재 활성 프로젝트와 오늘 작업량을 보여준다.
+- `/help`: 전체 사용법을 다시 보여준다.
+- `타이머 시작 양식`: `/timer` 예시를 보여준다.
+- `/report`: 완료 보고 명령 설명을 보여준다. 직접 누르는 버튼이라기보다 사용법 확인용에 가깝다.
+- `번역 양식`: `/translate` 예시를 보여준다.
+- `이미지 양식`: `/image` 예시를 보여준다.
+
+예:
+
+- 프로젝트 등록 양식 -> `/deadline_add 게임 시나리오 번역 | jp | ko | 120 | 2026-03-14 18:00 | 문장`
+- 또는 -> `게임 시나리오 번역 | jp | ko | 120 | 2026-03-14 18:00 | 문장`
+- 타이머 시작 양식 -> `/timer 25`
+- 번역 양식 -> `/translate 締切は明日の18時です。`
+- 이미지 양식 -> `/image deadline enforcer poster, black and orange warning stripes`
 
 ## API 사용
 
@@ -270,142 +337,45 @@ DFY_IMAGE_OUTPUT_DIR=data/generated_images
 - `GET /users/{user_id}/daily-report`
 - `GET /meta/providers`
 
-`POST /chat` 응답에는 `executed_tools`가 포함될 수 있다.  
-이 값은 내부 tool calling 루프에서 실제 실행된 도구 이름 목록이다.
-
-### Swagger로 실험하기
+Swagger UI에서 추천 실험 순서:
 
 1. `POST /users`
 2. `POST /projects`
 3. `POST /chat`
-4. 필요하면 `POST /translate`, `POST /images/generate`
-5. `POST /sessions`, `POST /sessions/{session_id}/complete`
+4. `POST /sessions`
+5. `POST /sessions/{session_id}/complete`
 6. `GET /users/{user_id}/daily-report`
 
-예시 입력:
+## `/chat` 응답
 
-### `POST /users`
+`POST /chat` 응답에는 아래 정보가 들어간다.
 
-```json
-{
-  "platform_user_id": "test-user-1",
-  "nickname": "hosung"
-}
-```
+- `reply`
+- `timer_minutes`
+- `executed_tools`
+- `tool_results`
 
-### `POST /projects`
+`executed_tools`는 내부에서 실제 실행된 도구 이름 목록이다.  
+`tool_results`는 번역, 이미지 생성 같은 도구 실행 결과를 담는다.
 
-```json
-{
-  "user_id": 1,
-  "title": "게임 시나리오 번역",
-  "source_language": "ja",
-  "target_language": "ko",
-  "total_units": 120,
-  "completed_units": 20,
-  "deadline_at": "2026-03-12T18:00:00+09:00",
-  "unit_label": "문장"
-}
-```
+## 일일 리포트
 
-### `POST /chat`
+현재 일일 리포트는 단순하다.
 
-```json
-{
-  "user_id": 1,
-  "message": "하기 싫다"
-}
-```
+- 집중 시간
+- 완료량
 
-### `POST /translate`
+즉, 지금 구조는 복잡한 심리 통계보다 `오늘 몇 분 했고 얼마나 끝냈는지`에 집중한다.
 
-```json
-{
-  "text": "締切は明日の18時です。",
-  "source_language": "ja",
-  "target_language": "ko",
-  "style": "natural"
-}
-```
+## 현재 제약
 
-### `POST /images/generate`
+- 텔레그램 일반 버튼은 입력창 자동 채우기를 지원하지 않는다.
+- 로컬 이미지 생성은 여전히 느릴 수 있다.
+- 번역과 이미지 모델은 처음 호출 시 로딩 시간이 있다.
+- 로컬 모델 세 개를 한꺼번에 강하게 쓰면 GPU 메모리가 빡빡할 수 있다.
 
-```json
-{
-  "prompt": "deadline enforcer poster, black and orange warning stripes",
-  "size": "512x512",
-  "style": "illustration"
-}
-```
+## 관련 문서
 
-## Telegram 사용
-
-현재 텔레그램에서 가능한 것:
-
-- `/start`
-- `/help`
-- `/deadline_add`
-- `/deadline_list`
-- `/status`
-- `/timer <분>`
-- `/report <숫자>`
-- `/translate <원문>`
-- `/image <프롬프트>`
-- 일반 텍스트 코칭
-
-### 버튼 동작
-
-텔레그램 하단 버튼은 두 종류다.
-
-- 바로 실행되는 명령 버튼
-  - `/deadline_list`
-  - `/status`
-  - `/help`
-- 안내용 양식 버튼
-  - `프로젝트 등록 양식`
-  - `타이머 시작 양식`
-  - `번역 양식`
-  - `이미지 양식`
-
-양식 버튼은 예시 커맨드를 메시지로 보내준다.  
-텔레그램 일반 봇은 입력창에 명령을 미리 채워 넣는 방식은 지원하지 않아서, 현재는 `복사해서 수정하는 흐름`으로 설계되어 있다.
-
-### 권장 사용 순서
-
-1. `/start`
-2. `프로젝트 등록 양식` 버튼 확인
-3. 예시를 복사해서 `/deadline_add ...` 전송
-4. `/status`
-5. `타이머 시작 양식` 버튼 확인
-6. `/timer 25`
-7. `/report 8`
-8. 필요하면 `/translate ...` 또는 `/image ...`
-
-### `/deadline_add` 형식
-
-```text
-/deadline_add <제목> | <원문 언어> | <목표 언어> | <총량> | <YYYY-MM-DD HH:MM> | <단위>
-```
-
-예:
-
-```text
-/deadline_add 게임 시나리오 번역 | ja | ko | 120 | 2026-03-14 18:00 | 문장
-```
-
-## 안정성 메모
-
-- 번역과 이미지 생성은 `asyncio.to_thread(...)`로 돌려 텔레그램 이벤트 루프를 덜 막는다.
-- 이미지 전송은 timeout을 늘려 둔다.
-- 그래도 `sendPhoto` timeout이 나면 파일 경로를 텍스트로 알려주는 fallback이 있다.
-- `rosetta_4b`는 현재 `Gemma3` 계열 로컬 체크포인트 특성 때문에 tokenizer fallback과 `token_type_ids` 제거 처리를 포함한다.
-
-## 구현 메모
-
-- 규칙 엔진: `deadlineforyou/rules.py`
-- 프롬프트: `deadlineforyou/prompts.py`
-- provider: `deadlineforyou/providers.py`
-- 서비스: `deadlineforyou/service.py`
-- API 진입점: `deadlineforyou/main.py`
-- Telegram 진입점: `deadlineforyou/telegram_bot.py`
-- 구현 아키텍처 문서: `deadlineforyou/architecture.md`
+- 구현 구조: [deadlineforyou/architecture.md](deadlineforyou/architecture.md)
+- 제품 설계 개요: [blueprint.md](blueprint.md)
+- 설치/에이전트 도구 문서: [docs/opencode.md](docs/opencode.md)

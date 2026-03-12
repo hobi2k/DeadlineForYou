@@ -28,6 +28,9 @@ TIMER_TEMPLATE_LABEL = "타이머 시작 양식"
 TRANSLATE_TEMPLATE_LABEL = "번역 양식"
 IMAGE_TEMPLATE_LABEL = "이미지 양식"
 
+SUPPORTED_LANGUAGE_CODES = {"ko", "jp", "en", "ch"}
+LANGUAGE_HELP_TEXT = "지원 언어 코드는 ko, jp, en, ch만 쓴다."
+
 
 TELEGRAM_READ_TIMEOUT_SECONDS = 120
 TELEGRAM_WRITE_TIMEOUT_SECONDS = 120
@@ -125,17 +128,24 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 "마감 집행관 「締切監督」 투입.",
                 f"사용자 등록 완료: {user['nickname']}",
                 "",
-                "처음이면 이 순서로 해라.",
-                "1. /deadline_add 로 프로젝트 등록",
-                "2. /status 로 현재 상태 확인",
-                "3. 타이머 시작 양식 버튼을 눌러 /timer 예시 확인",
-                "4. /timer 25 같은 식으로 세션 시작",
+                "처음 쓰는 사람 기준 사용 순서:",
+                "1. 프로젝트 등록 양식 버튼을 눌러 등록 예시를 본다.",
+                "2. 예시 줄에서 제목, 언어, 총량, 마감 시간만 바꿔서 보낸다.",
+                "3. /status 로 지금 활성 프로젝트가 맞는지 확인한다.",
+                "4. 타이머 시작 양식 버튼을 눌러 /timer 예시를 본다.",
+                "5. /timer 25 같이 보내서 작업 세션을 시작한다.",
+                "6. 세션이 끝나면 /report 12 같이 숫자로 완료량을 보고한다.",
+                "",
+                "프로젝트 등록에서 시간은 작업 시간 아니라 마감 시각이다.",
+                "예: 2026-03-14 18:00 = 이 프로젝트의 최종 마감 시간",
                 "",
                 "짧은 번역은 /translate",
                 "이미지 생성은 /image",
+                LANGUAGE_HELP_TEXT,
                 "",
-                "버튼을 누르면 입력 예시를 먼저 보여준다.",
-                "자세한 사용법은 /help",
+                "예시 버튼은 형식을 알려준다.",
+                "예시 줄은 /deadline_add 없이 그대로 보내도 프로젝트 등록으로 처리한다.",
+                "더 자세한 설명과 예시는 /help",
                 "평문 메시지도 바로 코칭한다.",
             ]
         ),
@@ -158,28 +168,46 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await update.message.reply_text(
         "\n".join(
             [
-                "사용 가능한 명령:",
+                "사용 방법 요약:",
+                "1. 프로젝트를 등록한다.",
+                "2. /status 로 현재 프로젝트를 확인한다.",
+                "3. /timer <분> 으로 작업을 시작한다.",
+                "4. 세션이 끝나면 /report <작업량> 으로 숫자 보고를 한다.",
+                "",
+                "명령 상세 설명:",
                 "",
                 "/start",
                 "시작 안내와 사용자 등록",
                 "",
                 "/deadline_add <제목> | <원문 언어> | <목표 언어> | <총량> | <YYYY-MM-DD HH:MM> | <단위>",
                 "프로젝트 등록",
-                "예: /deadline_add 게임 시나리오 번역 | ja | ko | 120 | 2026-03-14 18:00 | 문장",
+                "여기서 시간은 작업 시간 아니라 마감 시각이다.",
+                "총량은 프로젝트 전체 분량이다. 이번 세션 분량이 아니다.",
+                "단위는 문장, 페이지, 줄 같은 작업 단위명이다.",
+                "예: /deadline_add 게임 시나리오 번역 | jp | ko | 120 | 2026-03-14 18:00 | 문장",
+                "또는 명령 없이",
+                "게임 시나리오 번역 | jp | ko | 120 | 2026-03-14 18:00 | 문장",
+                LANGUAGE_HELP_TEXT,
                 "",
                 "/deadline_list",
                 "프로젝트 목록 확인",
                 "",
                 "/status",
                 "현재 활성 프로젝트와 오늘 진행 상황 확인",
+                "지금 어떤 프로젝트가 활성인지, 오늘 몇 분 했는지 본다.",
                 "",
                 "/timer <분>",
                 "원하는 분 수로 타이머 세션 시작",
                 "예: /timer 10, /timer 25, /timer 45",
+                "10분 이상이면 10분마다 압박 메시지가 온다.",
+                "끝나면 /report <작업량> 으로 숫자 보고를 해야 한다.",
+                "예: 이번 세션에서 8문장을 끝냈으면 /report 8",
                 "",
                 "/report <숫자>",
                 "방금 끝낸 작업량 보고",
                 "예: /report 12",
+                "숫자가 없으면 반영되지 않는다.",
+                "여기 숫자는 이번 세션에서 실제로 끝낸 양만 넣는다.",
                 "",
                 "/translate <원문>",
                 "짧은 텍스트 번역",
@@ -212,7 +240,15 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     service: DeadlineCoachService = context.application.bot_data["service"]
     projects = service.list_projects(user["id"])
     if not projects:
-        await update.message.reply_text("아직 등록된 프로젝트가 없다.\n/deadline_add 로 먼저 프로젝트부터 등록해라.")
+        await update.message.reply_text(
+            "\n".join(
+                [
+                    "아직 등록된 프로젝트가 없다.",
+                    "프로젝트 등록 양식 버튼을 누르거나 아래 형식으로 바로 보내라.",
+                    "게임 시나리오 번역 | jp | ko | 120 | 2026-03-14 18:00 | 문장",
+                ]
+            )
+        )
         return
 
     project = next((item for item in projects if item["status"] == "active"), projects[0])
@@ -246,8 +282,8 @@ def _parse_deadline_input(raw_text: str, timezone_name: str) -> tuple[str, str, 
         raise ValueError("입력 형식이 부족하다.")
 
     title = parts[0]
-    source_language = parts[1]
-    target_language = parts[2]
+    source_language = _normalize_language_code(parts[1])
+    target_language = _normalize_language_code(parts[2])
     total_units = int(parts[3])
     deadline_str = parts[4]
     unit_label = parts[5] if len(parts) >= 6 and parts[5] else "문장"
@@ -256,7 +292,138 @@ def _parse_deadline_input(raw_text: str, timezone_name: str) -> tuple[str, str, 
     deadline_at = datetime.fromisoformat(deadline_str.replace(" ", "T"))
     if deadline_at.tzinfo is None:
         deadline_at = deadline_at.replace(tzinfo=ZoneInfo(timezone_name))
+    _validate_supported_language(source_language)
+    _validate_supported_language(target_language)
     return title, source_language, target_language, total_units, deadline_at, unit_label
+
+
+def _normalize_language_code(value: str) -> str:
+    """_normalize_language_code
+
+    Args:
+        value: 입력된 언어 코드 문자열.
+
+    Returns:
+        str: 정규화된 언어 코드.
+    """
+    normalized = value.strip().lower()
+    aliases = {
+        "ja": "jp",
+        "zh": "ch",
+        "cn": "ch",
+    }
+    return aliases.get(normalized, normalized)
+
+
+def _validate_supported_language(value: str) -> None:
+    """_validate_supported_language
+
+    Args:
+        value: 검증할 언어 코드 문자열.
+
+    Returns:
+        None: 지원 언어가 아니면 예외를 발생시킨다.
+    """
+    if value not in SUPPORTED_LANGUAGE_CODES:
+        raise ValueError(LANGUAGE_HELP_TEXT)
+
+
+def _looks_like_project_input(text: str) -> bool:
+    """_looks_like_project_input
+
+    Args:
+        text: 사용자가 보낸 일반 텍스트.
+
+    Returns:
+        bool: 프로젝트 등록 형식처럼 보이면 True.
+    """
+    return text.count("|") >= 4 and not text.startswith("/")
+
+
+def _looks_like_translation_request(text: str) -> bool:
+    """_looks_like_translation_request
+
+    Args:
+        text: 사용자가 보낸 일반 텍스트.
+
+    Returns:
+        bool: 번역 요청처럼 보이면 True.
+    """
+    lowered = text.lower()
+    return "번역" in text or "/translate" in lowered
+
+
+def _looks_like_image_request(text: str) -> bool:
+    """_looks_like_image_request
+
+    Args:
+        text: 사용자가 보낸 일반 텍스트.
+
+    Returns:
+        bool: 이미지 생성 요청처럼 보이면 True.
+    """
+    return "이미지" in text and ("생성" in text or "만들" in text)
+
+
+async def _create_project_from_text(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    raw_text: str,
+    user: dict,
+) -> bool:
+    """_create_project_from_text
+
+    Args:
+        update: 텔레그램 업데이트 객체.
+        context: 텔레그램 핸들러 컨텍스트.
+        raw_text: 프로젝트 등록 후보 문자열.
+        user: 현재 사용자 레코드.
+
+    Returns:
+        bool: 프로젝트 등록 처리까지 끝냈으면 True.
+    """
+    service: DeadlineCoachService = context.application.bot_data["service"]
+    try:
+        title, source_language, target_language, total_units, deadline_at, unit_label = _parse_deadline_input(
+            raw_text,
+            user["timezone"],
+        )
+    except ValueError:
+        return False
+
+    for project in service.list_projects(user["id"]):
+        if project["status"] == "active":
+            service.update_project(project["id"], {"status": "paused"})
+
+    project = service.create_project(
+        {
+            "user_id": user["id"],
+            "title": title,
+            "source_language": source_language,
+            "target_language": target_language,
+            "total_units": total_units,
+            "completed_units": 0,
+            "deadline_at": deadline_at,
+            "unit_label": unit_label,
+        }
+    )
+
+    await update.message.reply_text(
+        "\n".join(
+            [
+                "프로젝트 등록 완료.",
+                f"제목: {project['title']}",
+                f"언어: {project['source_language']} -> {project['target_language']}",
+                f"분량: {project['completed_units']}/{project['total_units']} {project['unit_label']}",
+                f"마감: {project['deadline_at']}",
+                "다음 순서:",
+                "1. /status 로 다시 확인",
+                "2. /timer 25 로 작업 시작",
+                "3. 끝나면 /report <작업량> 으로 숫자 보고",
+            ]
+        )
+    )
+    return True
 
 
 async def deadline_add_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -278,9 +445,12 @@ async def deadline_add_command(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text(
             "\n".join(
                 [
-                    "프로젝트 등록 형식이 아직 비어 있다.",
-                    "아래 예시를 복사해서 필요한 부분만 바꿔서 보내면 된다.",
-                    "/deadline_add 게임 시나리오 번역 | ja | ko | 120 | 2026-03-14 18:00 | 문장",
+                    "프로젝트 정보가 비어 있다.",
+                    "프로젝트는 아래 두 방식 중 하나로 등록하면 된다.",
+                    "/deadline_add 게임 시나리오 번역 | jp | ko | 120 | 2026-03-14 18:00 | 문장",
+                    "게임 시나리오 번역 | jp | ko | 120 | 2026-03-14 18:00 | 문장",
+                    "형식 뜻: 제목 | 원문언어 | 목표언어 | 총량 | 마감시각 | 단위",
+                    LANGUAGE_HELP_TEXT,
                     "전체 설명은 /help",
                 ]
             )
@@ -297,8 +467,12 @@ async def deadline_add_command(update: Update, context: ContextTypes.DEFAULT_TYP
             "\n".join(
                 [
                     "형식이 맞지 않는다.",
+                    "형식은 제목 | 원문언어 | 목표언어 | 총량 | 마감시각 | 단위 순서다.",
                     "예시:",
-                    "/deadline_add 게임 시나리오 번역 | ja | ko | 120 | 2026-03-14 18:00 | 문장",
+                    "/deadline_add 게임 시나리오 번역 | jp | ko | 120 | 2026-03-14 18:00 | 문장",
+                    "또는",
+                    "게임 시나리오 번역 | jp | ko | 120 | 2026-03-14 18:00 | 문장",
+                    LANGUAGE_HELP_TEXT,
                     "전체 설명은 /help",
                 ]
             )
@@ -331,7 +505,11 @@ async def deadline_add_command(update: Update, context: ContextTypes.DEFAULT_TYP
                 f"언어: {project['source_language']} -> {project['target_language']}",
                 f"분량: {project['completed_units']}/{project['total_units']} {project['unit_label']}",
                 f"마감: {project['deadline_at']}",
-                "이제 /status로 확인하고 /timer 25 같은 식으로 바로 시작해라.",
+                "",
+                "다음 순서:",
+                "1. /status 로 지금 프로젝트가 활성인지 확인",
+                "2. /timer 25 로 작업 시작",
+                "3. 끝나면 /report <작업량> 으로 숫자 보고",
             ]
         )
     )
@@ -381,8 +559,14 @@ async def project_template_message(update: Update, context: ContextTypes.DEFAULT
     await update.message.reply_text(
         "\n".join(
             [
-                "아래 줄을 복사해서 필요한 부분만 바꿔서 보내라.",
-                "/deadline_add 게임 시나리오 번역 | ja | ko | 120 | 2026-03-14 18:00 | 문장",
+                "프로젝트 등록은 아래 줄 한 줄만 보내면 된다.",
+                "/deadline_add 게임 시나리오 번역 | jp | ko | 120 | 2026-03-14 18:00 | 문장",
+                "또는 /deadline_add 없이",
+                "게임 시나리오 번역 | jp | ko | 120 | 2026-03-14 18:00 | 문장",
+                "형식 뜻:",
+                "제목 | 원문언어 | 목표언어 | 총량 | 마감시각 | 단위",
+                "예: 게임 시나리오 번역 | jp | ko | 120 | 2026-03-14 18:00 | 문장",
+                LANGUAGE_HELP_TEXT,
                 "자세한 설명은 /help",
             ]
         )
@@ -427,9 +611,12 @@ async def timer_template_message(update: Update, context: ContextTypes.DEFAULT_T
     await update.message.reply_text(
         "\n".join(
             [
-                "아래 줄을 복사해서 분만 바꿔서 보내라.",
+                "타이머는 아래처럼 분 수만 넣어서 보내면 된다.",
                 "/timer 25",
                 "예: /timer 10, /timer 25, /timer 45",
+                "이 숫자는 프로젝트 마감 시간이 아니라 이번 작업 세션 길이다.",
+                "10분 이상이면 10분마다 압박 메시지가 온다.",
+                "끝나면 /report <작업량> 으로 숫자 보고를 해야 한다.",
                 "자세한 설명은 /help",
             ]
         )
@@ -486,6 +673,7 @@ async def translate_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         )
         return
 
+    await update.message.reply_text("번역 중이다. 잠깐 기다려라.")
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
     result = await asyncio.to_thread(service.translate_text, text=raw_text)
     await update.message.reply_text(f"번역 결과:\n{result['translated_text']}")
@@ -546,14 +734,7 @@ async def image_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             )
         except TimedOut:
             LOGGER.warning("send_photo_timeout file_path=%s", file_path)
-            await update.message.reply_text(
-                "\n".join(
-                    [
-                        "이미지 생성은 끝났는데 텔레그램 업로드가 시간 초과로 실패했다.",
-                        f"파일 경로: {file_path}",
-                    ]
-                )
-            )
+            await update.message.reply_text("이미지 생성은 끝났는데 텔레그램 업로드가 시간 초과로 실패했다. 다시 시도해라.")
 
 
 async def _start_session(
@@ -611,7 +792,8 @@ async def _start_session(
     lines = [
         f"{duration_minutes}분 세션 시작.",
         f"세션 ID: {session['id']}",
-        f"{duration_minutes}분 끝나면 /report <작업량> 으로 보고",
+        "세션이 10분 이상이면 중간에 압박 메시지가 온다.",
+        f"{duration_minutes}분이 끝나면 /report <작업량> 으로 숫자 보고",
     ]
     if context.job_queue is None:
         lines.append("참고: 현재 JobQueue가 없어 자동 종료 알림은 보내지 않는다.")
@@ -637,6 +819,8 @@ async def timer_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 [
                     "시작할 분 수를 같이 보내면 된다.",
                     "예: /timer 25",
+                    "10분 이상이면 중간 압박 메시지가 간다.",
+                    "끝나면 /report <작업량> 으로 보고한다.",
                     "더 자세한 설명은 /help",
                 ]
             )
@@ -671,17 +855,35 @@ async def report_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     service: DeadlineCoachService = context.application.bot_data["service"]
     last_session_id = context.user_data.get("last_session_id")
     if not last_session_id:
-        await update.message.reply_text("먼저 /timer <분>으로 세션부터 시작해라. 예: /timer 25")
+        await update.message.reply_text(
+            "\n".join(
+                [
+                    "아직 시작한 세션이 없다.",
+                    "먼저 /timer <분>으로 세션부터 시작해라.",
+                    "예: /timer 25",
+                ]
+            )
+        )
         return
 
-    if context.args:
-        try:
-            completed_units = int(context.args[0])
-        except ValueError:
-            await update.message.reply_text("/report 뒤에는 숫자만 넣어라. 예: /report 8")
-            return
-    else:
-        completed_units = 0
+    if not context.args:
+        await update.message.reply_text(
+            "\n".join(
+                [
+                    "완료량 숫자가 빠졌다.",
+                    "예: /report 8",
+                    "숫자는 이번 세션에서 실제로 끝낸 단위 수만 넣어라.",
+                    "예를 들어 이번 25분 동안 8문장을 끝냈으면 /report 8 이다.",
+                ]
+            )
+        )
+        return
+
+    try:
+        completed_units = int(context.args[0])
+    except ValueError:
+        await update.message.reply_text("/report 뒤에는 숫자만 넣어라. 예: /report 8")
+        return
 
     session = service.complete_session(
         session_id=last_session_id,
@@ -692,12 +894,12 @@ async def report_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text("세션을 찾지 못했다. 다시 /timer로 새 세션부터 시작해라.")
         return
 
-    reply, evaluation, _ = service.chat(user["id"], f"{completed_units} 단위 완료 보고")
+    reply, evaluation, _, _ = service.chat(user["id"], f"{completed_units} 단위 완료 보고")
     await update.message.reply_text(
         "\n".join(
             [
                 f"보고 반영 완료. 이번 세션은 {session['duration_minutes']}분.",
-                f"추가 반영 작업량: {completed_units}",
+                f"이번에 반영된 작업량: {completed_units}",
                 f"다음 권장 타이머: {evaluation.timer_minutes}분",
                 "",
                 reply,
@@ -801,10 +1003,47 @@ async def text_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if update.message.text == IMAGE_TEMPLATE_LABEL:
         await image_template_message(update, context)
         return
+    if _looks_like_project_input(update.message.text):
+        if await _create_project_from_text(update, context, update.message.text, user):
+            return
+    likely_translation_request = _looks_like_translation_request(update.message.text)
+    likely_image_request = _looks_like_image_request(update.message.text)
     service: DeadlineCoachService = context.application.bot_data["service"]
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-    reply, _, _ = await asyncio.to_thread(service.chat, user["id"], update.message.text)
-    await update.message.reply_text(reply)
+    reply, _, executed_tools, tool_results = await asyncio.to_thread(service.chat, user["id"], update.message.text)
+    translation_result = tool_results.get("translate_text") if "translate_text" in executed_tools else None
+    if translation_result and translation_result.get("translated_text"):
+        await update.message.reply_text(f"번역 결과:\n{translation_result['translated_text']}")
+        return
+    if likely_translation_request:
+        await update.message.reply_text("번역 요청으로 이해했지만 모델이 번역 도구를 제대로 호출하지 못했다. 한 번 더 보내거나 /translate 명령을 써라.")
+        return
+    image_result = tool_results.get("generate_image") if "generate_image" in executed_tools else None
+    if image_result and image_result.get("file_path") and not image_result.get("error"):
+        file_path = image_result["file_path"]
+        with Path(file_path).open("rb") as image_file:
+            try:
+                await update.message.reply_photo(
+                    photo=image_file,
+                    caption="이미지 생성 완료.",
+                    read_timeout=TELEGRAM_READ_TIMEOUT_SECONDS,
+                    write_timeout=TELEGRAM_WRITE_TIMEOUT_SECONDS,
+                    connect_timeout=TELEGRAM_CONNECT_TIMEOUT_SECONDS,
+                    pool_timeout=TELEGRAM_POOL_TIMEOUT_SECONDS,
+                )
+            except TimedOut:
+                LOGGER.warning("send_photo_timeout file_path=%s", file_path)
+                await update.message.reply_text("이미지 생성은 끝났는데 텔레그램 업로드가 시간 초과로 실패했다. 다시 시도해라.")
+        return
+    if "generate_image" in executed_tools:
+        return
+    if likely_image_request:
+        await update.message.reply_text("이미지 요청으로 이해했지만 모델이 이미지 도구를 제대로 호출하지 못했다. 한 번 더 보내거나 /image 명령을 써라.")
+        return
+    sanitized_reply = "\n".join(
+        line for line in reply.splitlines() if "파일 경로:" not in line and "data/generated_images/" not in line
+    ).strip()
+    await update.message.reply_text(sanitized_reply or "지금 상태를 한 번만 더 짧게 보내라.")
 
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:

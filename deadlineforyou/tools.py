@@ -108,7 +108,7 @@ def _translate(service: Any, arguments: dict[str, Any]) -> dict[str, Any]:
     """
     return service.translate_text(
         text=str(arguments["text"]),
-        source_language=str(arguments.get("source_language", "ja")),
+        source_language=str(arguments.get("source_language", "jp")),
         target_language=str(arguments.get("target_language", "ko")),
         style=str(arguments.get("style", "natural")),
     )
