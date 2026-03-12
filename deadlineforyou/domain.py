@@ -2,16 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from enum import StrEnum
 from typing import Any
 
-
-class CoachingMode(StrEnum):
-    default = "default"
-    reality_check = "reality_check"
-    force_start = "force_start"
-    cold_support = "cold_support"
-    boss_mode = "boss_mode"
+from enum import StrEnum
 
 
 class SessionStatus(StrEnum):
@@ -32,12 +25,7 @@ def utcnow() -> datetime:
 
 @dataclass(slots=True)
 class RuleEvaluation:
-    mode: CoachingMode
-    urgency_score: int
-    avoidance_hits: int
     timer_minutes: int
-    action_hint: str
-    report_hint: str
 
 
 @dataclass(slots=True)

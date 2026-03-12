@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterator
 
-from deadlineforyou.domain import CoachingMode, SessionStatus
+from deadlineforyou.domain import SessionStatus
 
 
 SCHEMA = """
@@ -56,18 +56,6 @@ CREATE TABLE IF NOT EXISTS messages (
     project_id INTEGER,
     role TEXT NOT NULL,
     content TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    FOREIGN KEY(user_id) REFERENCES users(id),
-    FOREIGN KEY(project_id) REFERENCES projects(id)
-);
-
-CREATE TABLE IF NOT EXISTS avoidance_events (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    project_id INTEGER,
-    trigger_text TEXT NOT NULL,
-    category TEXT NOT NULL,
-    severity INTEGER NOT NULL,
     created_at TEXT NOT NULL,
     FOREIGN KEY(user_id) REFERENCES users(id),
     FOREIGN KEY(project_id) REFERENCES projects(id)
@@ -302,13 +290,13 @@ class Database:
             conn.execute(f"UPDATE projects SET {', '.join(fields)} WHERE id = ?", values)
             return conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
 
-    def create_session(self, user_id: int, project_id: int | None, mode: CoachingMode, duration_minutes: int) -> sqlite3.Row:
+    def create_session(self, user_id: int, project_id: int | None, mode: str, duration_minutes: int) -> sqlite3.Row:
         """create_session
 
         Args:
             user_id: 내부 사용자 식별자.
             project_id: 연결된 프로젝트 식별자. 없을 수 있다.
-            mode: 세션에 연결할 코칭 모드.
+            mode: 세션에 저장할 문자열 모드.
             duration_minutes: 예정된 세션 길이(분).
 
         Returns:
@@ -327,7 +315,7 @@ class Database:
                 (
                     user_id,
                     project_id,
-                    mode.value,
+                    mode,
                     duration_minutes,
                     SessionStatus.active.value,
                     _iso(started_at),
@@ -437,48 +425,6 @@ class Database:
             ).fetchall()
         # 조회는 최신순이 효율적이지만, 모델 입력은 시간순이 더 자연스러워 뒤집어서 반환한다.
         return list(reversed(rows))
-
-    def add_avoidance_event(self, user_id: int, project_id: int | None, trigger_text: str, category: str, severity: int) -> None:
-        """add_avoidance_event
-
-        Args:
-            user_id: 내부 사용자 식별자.
-            project_id: 연결된 프로젝트 식별자. 없을 수 있다.
-            trigger_text: 이벤트를 유발한 사용자 원문.
-            category: 분류된 회피 유형.
-            severity: 회피 심각도 점수.
-
-        Returns:
-            None: 회피 이벤트 행을 저장한다.
-        """
-        with self.connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO avoidance_events (user_id, project_id, trigger_text, category, severity, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (user_id, project_id, trigger_text, category, severity, _iso(datetime.now(UTC))),
-            )
-
-    def today_avoidance_events(self, user_id: int) -> list[sqlite3.Row]:
-        """today_avoidance_events
-
-        Args:
-            user_id: 내부 사용자 식별자.
-
-        Returns:
-            list[sqlite3.Row]: UTC 자정 이후 기록된 전체 회피 이벤트 목록.
-        """
-        start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
-        with self.connect() as conn:
-            return conn.execute(
-                """
-                SELECT * FROM avoidance_events
-                WHERE user_id = ? AND created_at >= ?
-                ORDER BY created_at ASC
-                """,
-                (user_id, _iso(start)),
-            ).fetchall()
 
     def today_completed_sessions(self, user_id: int) -> list[sqlite3.Row]:
         """today_completed_sessions

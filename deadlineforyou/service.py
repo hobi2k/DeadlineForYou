@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from collections import Counter
 from datetime import UTC, datetime
 import json
 from sqlite3 import Row
 from typing import Any
 
 from deadlineforyou.config import get_settings
-from deadlineforyou.domain import CoachingMode, RuleEvaluation
+from deadlineforyou.domain import RuleEvaluation
 from deadlineforyou.prompts import SYSTEM_PROMPT, build_context_block
 from deadlineforyou.providers import (
     ImageProvider,
@@ -16,7 +15,7 @@ from deadlineforyou.providers import (
     build_image_provider,
     build_translation_provider,
 )
-from deadlineforyou.rules import detect_avoidance, evaluate_mode
+from deadlineforyou.rules import evaluate_mode
 from deadlineforyou.storage import Database
 from deadlineforyou.tools import build_bound_chat_tools
 
@@ -121,14 +120,14 @@ class DeadlineCoachService:
         """
         return _row_to_dict(self.database.update_project(project_id, updates))
 
-    def start_session(self, user_id: int, project_id: int | None, duration_minutes: int, mode: CoachingMode) -> dict:
+    def start_session(self, user_id: int, project_id: int | None, duration_minutes: int, mode: str) -> dict:
         """start_session
 
         Args:
             user_id: 내부 사용자 식별자.
             project_id: 세션이 특정 프로젝트에 묶여 있으면 그 식별자.
             duration_minutes: 예정된 세션 길이(분).
-            mode: 세션에 연결할 코칭 모드.
+            mode: 세션에 저장할 문자열 모드.
 
         Returns:
             dict: 저장된 세션 레코드.
@@ -187,11 +186,7 @@ class DeadlineCoachService:
         """
         project = self.get_active_project(user_id, project_id)
 
-        recent_avoidance_events = self.database.today_avoidance_events(user_id)
-        evaluation = evaluate_mode(message, project, recent_avoidance_count=len(recent_avoidance_events))
-        avoidance_hits, category = detect_avoidance(message)
-        if avoidance_hits:
-            self.database.add_avoidance_event(user_id, project["id"] if project else None, message, category, avoidance_hits)
+        evaluation = evaluate_mode(message, project)
 
         history_rows = self.database.recent_messages(user_id)
         history = [{"role": row["role"], "content": row["content"]} for row in history_rows]
@@ -254,6 +249,31 @@ class DeadlineCoachService:
         self.database.add_message(user_id, project["id"] if project else None, "assistant", reply)
         return reply, evaluation, executed_tools
 
+    def coach_nudge(self, user_id: int, message: str, project_id: int | None = None) -> str:
+        """coach_nudge
+
+        Args:
+            user_id: 내부 사용자 식별자.
+            message: 코치에게 전달할 상황 설명.
+            project_id: 선택적 프로젝트 식별자.
+
+        Returns:
+            str: 저장 없이 즉시 보낼 짧은 코칭 메시지.
+        """
+        project = self.get_active_project(user_id, project_id)
+        evaluation = evaluate_mode(message, project)
+        user_snapshot = self._build_user_snapshot(user_id)
+        project_snapshot = self._build_project_snapshot(project)
+        rule_snapshot = self._build_rule_snapshot(evaluation)
+        context_block = build_context_block(user_snapshot, project_snapshot, rule_snapshot)
+        result = self.provider.generate_turn(
+            SYSTEM_PROMPT,
+            context_block,
+            [{"role": "user", "content": message}],
+            None,
+        )
+        return result.text or "지금 상태를 짧게 보고해."
+
     def build_daily_report(self, user_id: int) -> dict:
         """build_daily_report
 
@@ -261,27 +281,19 @@ class DeadlineCoachService:
             user_id: 내부 사용자 식별자.
 
         Returns:
-            dict: 세션, 진행량, 회피 행동을 모은 일일 집계 리포트.
+            dict: 세션과 진행량을 모은 일일 집계 리포트.
         """
         sessions = self.database.today_completed_sessions(user_id)
-        avoidance_events = self.database.today_avoidance_events(user_id)
         focus_minutes = sum(row["duration_minutes"] for row in sessions)
         completed_units = sum(row["completed_units_delta"] for row in sessions)
-        excuses = [row["trigger_text"] for row in avoidance_events]
-        top_excuse = Counter(excuses).most_common(1)[0][0] if excuses else None
 
-        summary = (
-            f"오늘 집중 {focus_minutes}분, 완료 {completed_units}단위, 회피 {len(avoidance_events)}회. "
-            f"가장 많이 남긴 변명: {top_excuse or '없음'}."
-        )
+        summary = f"오늘 집중 {focus_minutes}분, 완료 {completed_units}단위."
 
         return {
             "user_id": user_id,
             "date": datetime.now(UTC).date().isoformat(),
             "focus_minutes": focus_minutes,
             "completed_units": completed_units,
-            "avoidance_count": len(avoidance_events),
-            "top_excuse": top_excuse,
             "summary": summary,
         }
 
@@ -381,10 +393,4 @@ class DeadlineCoachService:
         Returns:
             str: 프롬프트 주입용 규칙 가이드 요약 문자열.
         """
-        return (
-            f"mode={evaluation.mode.value}\n"
-            f"urgency_score={evaluation.urgency_score}\n"
-            f"timer_minutes={evaluation.timer_minutes}\n"
-            f"action_hint={evaluation.action_hint}\n"
-            f"report_hint={evaluation.report_hint}"
-        )
+        return f"recommended_timer_minutes={evaluation.timer_minutes}"

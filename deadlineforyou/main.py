@@ -5,7 +5,6 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 
 from deadlineforyou.config import get_settings
-from deadlineforyou.domain import CoachingMode
 from deadlineforyou.providers import build_provider
 from deadlineforyou.schemas import (
     ChatRequest,
@@ -135,11 +134,7 @@ def chat(payload: ChatRequest):
     reply, evaluation, executed_tools = service.chat(payload.user_id, payload.message, payload.project_id)
     return {
         "reply": reply,
-        "mode": evaluation.mode,
-        "urgency_score": evaluation.urgency_score,
         "timer_minutes": evaluation.timer_minutes,
-        "action_hint": evaluation.action_hint,
-        "report_hint": evaluation.report_hint,
         "executed_tools": executed_tools,
     }
 
@@ -272,5 +267,5 @@ def provider_meta():
         "image_lazy_load": settings.image_lazy_load,
         "image_unload_after_generation": settings.image_unload_after_generation,
         "supports": ["local", "scripted", "local_images"],
-        "recommended_session_modes": [mode.value for mode in CoachingMode],
+        "recommended_session_types": ["timer"],
     }

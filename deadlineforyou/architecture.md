@@ -221,11 +221,7 @@ deadlineforyou/
 출력:
 
 - `reply`
-- `mode`
-- `urgency_score`
 - `timer_minutes`
-- `action_hint`
-- `report_hint`
 - `executed_tools`
 
 `executed_tools`는 내부 tool calling 루프에서 실제 실행된 도구 이름 목록이다.
@@ -321,9 +317,8 @@ DB 엔진:
 
 용도:
 
-- 회피 누적 횟수 집계
-- 일일 리포트 보강
-- 코칭 모드 판정 강화
+- 과거 회피 기록 보관
+- 일일 리포트 보강용 잔존 데이터
 
 ## 9. 도메인 구조
 
@@ -331,13 +326,15 @@ DB 엔진:
 
 - `deadlineforyou/domain.py`
 
-### CoachingMode
+### 코칭 상태 표현
 
-- `default`
-- `reality_check`
-- `force_start`
-- `cold_support`
-- `boss_mode`
+현재 구현은 복잡한 이름의 모드 enum을 외부에 드러내지 않는다.
+
+핵심 구분:
+
+- `normal`: 일반 코칭 응답
+- `urgent`: 마감 압박이 강한 응답
+- `timer`: 사용자가 직접 시작한 수동 세션
 
 ### SessionStatus
 
@@ -350,12 +347,7 @@ DB 엔진:
 
 포함 필드:
 
-- `mode`
-- `urgency_score`
-- `avoidance_hits`
 - `timer_minutes`
-- `action_hint`
-- `report_hint`
 
 ## 10. 규칙 엔진 구조
 
@@ -367,7 +359,6 @@ DB 엔진:
 
 - 회피 표현 감지
 - 마감 압박 계산
-- 코칭 모드 선택
 - 기본 타이머 길이 제안
 
 주요 감지 표현:
@@ -384,10 +375,20 @@ DB 엔진:
 
 기본 판정:
 
-- 마감 6시간 이내면 `boss_mode`
-- 강한 회피는 `force_start`
-- 피로 표현은 `cold_support`
-- 누적 회피가 많으면 `reality_check`
+- 마감 6시간 이내면 더 강한 압박 응답과 25분 권장 타이머
+- 강한 회피는 더 작은 행동 단위 제시
+- 피로 표현은 복구형 지시
+- 누적 회피가 많으면 현실 경고 강화
+
+세션 명령과의 연결:
+
+- `/timer <25` -> 주로 `timer`
+- `/timer >=25` -> 주로 `urgent`
+
+의도 차이:
+
+- 현재 텔레그램 수동 세션은 `/timer <분>` 하나로 단순화했다.
+- 사용자는 시간만 정하고, 내부 저장 시에만 세션 mode를 나눈다.
 
 ## 11. 프롬프트 구조
 
@@ -574,9 +575,7 @@ DB 엔진:
 - `/status`
 - `/translate`
 - `/image`
-- `/start10`
-- `/start15`
-- `/pomodoro`
+- `/timer`
 - `/report`
 
 ### 15.3 버튼 UX
@@ -587,16 +586,19 @@ DB 엔진:
   - `/deadline_list`
   - `/status`
   - `/help`
-  - `/start10`
-  - `/start15`
-  - `/pomodoro`
 - 안내 버튼
   - `프로젝트 등록 양식`
+  - `타이머 시작 양식`
   - `번역 양식`
   - `이미지 양식`
 
 안내 버튼을 누르면 예시 커맨드를 메시지로 보내준다.  
 입력창 자동 채우기는 일반 텔레그램 봇에서 지원하지 않기 때문에 현재 구조는 `예시 안내 -> 복사 수정` 흐름이다.
+
+이 설계 이유:
+
+- `/deadline_add`, `/timer`, `/translate`, `/image`는 인자가 없으면 실행 의미가 약하다.
+- 그래서 버튼은 "바로 실행"보다 "올바른 형식을 보여주는 빠른 진입점" 역할을 맡는다.
 
 ### 15.4 안정성 처리
 
@@ -635,7 +637,8 @@ POST /users
  -> 프로젝트 등록 양식 버튼 확인
  -> /deadline_add ...
  -> /status
- -> /start10
+ -> 타이머 시작 양식 버튼 확인
+ -> /timer 25
  -> /report 8
  -> 필요하면 /translate ...
  -> 필요하면 /image ...

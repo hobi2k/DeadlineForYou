@@ -12,7 +12,6 @@ from telegram.error import TimedOut
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
 from deadlineforyou.config import get_settings
-from deadlineforyou.domain import CoachingMode
 from deadlineforyou.providers import build_provider
 from deadlineforyou.service import DeadlineCoachService
 from deadlineforyou.storage import Database
@@ -25,6 +24,7 @@ logging.basicConfig(
 LOGGER = logging.getLogger("deadlineforyou.telegram")
 
 PROJECT_TEMPLATE_LABEL = "프로젝트 등록 양식"
+TIMER_TEMPLATE_LABEL = "타이머 시작 양식"
 TRANSLATE_TEMPLATE_LABEL = "번역 양식"
 IMAGE_TEMPLATE_LABEL = "이미지 양식"
 
@@ -112,7 +112,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         [
             [PROJECT_TEMPLATE_LABEL, "/deadline_list"],
             ["/status", "/help"],
-            ["/start10", "/start15", "/pomodoro"],
+            [TIMER_TEMPLATE_LABEL, "/report"],
             [TRANSLATE_TEMPLATE_LABEL, IMAGE_TEMPLATE_LABEL],
         ],
         resize_keyboard=True,
@@ -128,7 +128,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 "처음이면 이 순서로 해라.",
                 "1. /deadline_add 로 프로젝트 등록",
                 "2. /status 로 현재 상태 확인",
-                "3. /start10 으로 바로 작업 시작",
+                "3. 타이머 시작 양식 버튼을 눌러 /timer 예시 확인",
+                "4. /timer 25 같은 식으로 세션 시작",
                 "",
                 "짧은 번역은 /translate",
                 "이미지 생성은 /image",
@@ -172,14 +173,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 "/status",
                 "현재 활성 프로젝트와 오늘 진행 상황 확인",
                 "",
-                "/start10",
-                "10분 강제 시동 세션 시작",
-                "",
-                "/start15",
-                "15분 구조 복구 세션 시작",
-                "",
-                "/pomodoro",
-                "25분 집중 세션 시작",
+                "/timer <분>",
+                "원하는 분 수로 타이머 세션 시작",
+                "예: /timer 10, /timer 25, /timer 45",
                 "",
                 "/report <숫자>",
                 "방금 끝낸 작업량 보고",
@@ -229,7 +225,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 f"진행률: {project['completed_units']}/{project['total_units']} {project['unit_label']}",
                 f"마감: {project['deadline_at']}",
                 f"오늘 집중: {report['focus_minutes']}분",
-                f"오늘 회피: {report['avoidance_count']}회",
+                f"오늘 완료량: {report['completed_units']}",
             ]
         )
     )
@@ -335,7 +331,7 @@ async def deadline_add_command(update: Update, context: ContextTypes.DEFAULT_TYP
                 f"언어: {project['source_language']} -> {project['target_language']}",
                 f"분량: {project['completed_units']}/{project['total_units']} {project['unit_label']}",
                 f"마감: {project['deadline_at']}",
-                "이제 /status로 확인하고 바로 /start10 쳐라.",
+                "이제 /status로 확인하고 /timer 25 같은 식으로 바로 시작해라.",
             ]
         )
     )
@@ -410,6 +406,30 @@ async def translate_template_message(update: Update, context: ContextTypes.DEFAU
             [
                 "아래 줄을 복사해서 원문만 바꿔서 보내라.",
                 "/translate 締切は明日の18時です。",
+                "자세한 설명은 /help",
+            ]
+        )
+    )
+
+
+async def timer_template_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """timer_template_message
+
+    Args:
+        update: 텔레그램 업데이트 객체.
+        context: 텔레그램 핸들러 컨텍스트.
+
+    Returns:
+        None: 타이머 시작용 간단한 입력 예시를 전송한다.
+    """
+    user = await _ensure_user(update, context)
+    LOGGER.info("timer_template_message user_id=%s", user["id"])
+    await update.message.reply_text(
+        "\n".join(
+            [
+                "아래 줄을 복사해서 분만 바꿔서 보내라.",
+                "/timer 25",
+                "예: /timer 10, /timer 25, /timer 45",
                 "자세한 설명은 /help",
             ]
         )
@@ -540,7 +560,7 @@ async def _start_session(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     duration_minutes: int,
-    mode: CoachingMode,
+    mode: str,
 ) -> None:
     """_start_session
 
@@ -548,7 +568,7 @@ async def _start_session(
         update: 텔레그램 업데이트 객체.
         context: 텔레그램 핸들러 컨텍스트.
         duration_minutes: 시작할 세션 길이.
-        mode: 세션에 붙일 코칭 모드.
+        mode: 세션에 저장할 문자열 모드.
 
     Returns:
         None: 세션 생성 결과를 전송한다.
@@ -558,7 +578,7 @@ async def _start_session(
         "start_session user_id=%s duration=%s mode=%s",
         user["id"],
         duration_minutes,
-        mode.value,
+        mode,
     )
     service: DeadlineCoachService = context.application.bot_data["service"]
     projects = service.list_projects(user["id"])
@@ -568,6 +588,18 @@ async def _start_session(
 
     # JobQueue가 활성화된 경우에만 후속 알림을 예약한다.
     if context.job_queue is not None:
+        for elapsed_minutes in range(10, duration_minutes, 10):
+            context.job_queue.run_once(
+                send_session_progress_reminder,
+                when=elapsed_minutes * 60,
+                chat_id=update.effective_chat.id,
+                data={
+                    "session_id": session["id"],
+                    "elapsed_minutes": elapsed_minutes,
+                    "remaining_minutes": duration_minutes - elapsed_minutes,
+                },
+                name=f"session-progress-{session['id']}-{elapsed_minutes}",
+            )
         context.job_queue.run_once(
             send_session_followup,
             when=duration_minutes * 60,
@@ -579,9 +611,6 @@ async def _start_session(
     lines = [
         f"{duration_minutes}분 세션 시작.",
         f"세션 ID: {session['id']}",
-        "지금 할 일:",
-        "파일 열기",
-        "첫 문장부터 번역",
         f"{duration_minutes}분 끝나면 /report <작업량> 으로 보고",
     ]
     if context.job_queue is None:
@@ -590,43 +619,41 @@ async def _start_session(
     await update.message.reply_text("\n".join(lines))
 
 
-async def start10_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """start10_command
+async def timer_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """timer_command
 
     Args:
         update: 텔레그램 업데이트 객체.
         context: 텔레그램 핸들러 컨텍스트.
 
     Returns:
-        None: 10분 세션을 시작한다.
+        None: 사용자가 지정한 분 수로 세션을 시작한다.
     """
-    await _start_session(update, context, 10, CoachingMode.force_start)
+    await _ensure_user(update, context)
+    LOGGER.info("timer_command chat_id=%s raw_text=%s", update.effective_chat.id, update.message.text)
+    if not context.args:
+        await update.message.reply_text(
+            "\n".join(
+                [
+                    "시작할 분 수를 같이 보내면 된다.",
+                    "예: /timer 25",
+                    "더 자세한 설명은 /help",
+                ]
+            )
+        )
+        return
 
+    try:
+        duration_minutes = int(context.args[0])
+    except ValueError:
+        await update.message.reply_text("분 수는 숫자로 넣어라. 예: /timer 25")
+        return
 
-async def start15_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """start15_command
+    if duration_minutes < 1 or duration_minutes > 180:
+        await update.message.reply_text("타이머는 1분 이상 180분 이하로 설정해라.")
+        return
 
-    Args:
-        update: 텔레그램 업데이트 객체.
-        context: 텔레그램 핸들러 컨텍스트.
-
-    Returns:
-        None: 15분 세션을 시작한다.
-    """
-    await _start_session(update, context, 15, CoachingMode.cold_support)
-
-
-async def pomodoro_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """pomodoro_command
-
-    Args:
-        update: 텔레그램 업데이트 객체.
-        context: 텔레그램 핸들러 컨텍스트.
-
-    Returns:
-        None: 25분 포모도로 세션을 시작한다.
-    """
-    await _start_session(update, context, 25, CoachingMode.boss_mode)
+    await _start_session(update, context, duration_minutes, "timer")
 
 
 async def report_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -644,7 +671,7 @@ async def report_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     service: DeadlineCoachService = context.application.bot_data["service"]
     last_session_id = context.user_data.get("last_session_id")
     if not last_session_id:
-        await update.message.reply_text("먼저 /start10, /start15, /pomodoro 중 하나로 세션부터 시작해라.")
+        await update.message.reply_text("먼저 /timer <분>으로 세션부터 시작해라. 예: /timer 25")
         return
 
     if context.args:
@@ -662,10 +689,10 @@ async def report_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         completed_units_delta=completed_units,
     )
     if not session:
-        await update.message.reply_text("세션을 찾지 못했다. 다시 /start10부터 시작해라.")
+        await update.message.reply_text("세션을 찾지 못했다. 다시 /timer로 새 세션부터 시작해라.")
         return
 
-    reply, evaluation, _ = service.chat(user["id"], f"{completed_units} {('단위 완료' if completed_units else '세션 완료')}")
+    reply, evaluation, _ = service.chat(user["id"], f"{completed_units} 단위 완료 보고")
     await update.message.reply_text(
         "\n".join(
             [
@@ -690,14 +717,64 @@ async def send_session_followup(context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     session_id = context.job.data["session_id"]
     LOGGER.info("send_session_followup session_id=%s chat_id=%s", session_id, context.job.chat_id)
-    await context.bot.send_message(
-        chat_id=context.job.chat_id,
-        text=(
-            f"세션 {session_id} 종료 시각이다.\n"
-            "번역량 숫자와 함께 /report <작업량> 으로 보고해.\n"
-            "또 도망쳤으면 그것도 바로 들킨다."
-        ),
+    service: DeadlineCoachService = context.application.bot_data["service"]
+    session = service.get_session(session_id)
+    if not session or session["status"] == "completed":
+        return
+
+    user_id = session["user_id"]
+    reply = await asyncio.to_thread(
+        service.coach_nudge,
+        user_id,
+        "타이머가 끝났는데 사용자가 아직 /report 완료 보고를 하지 않았다. 남은 분량을 의식하게 만들고 지금 바로 /report <작업량> 으로 보고하게 만드는 짧은 압박 메시지를 보내라.",
+        session.get("project_id"),
     )
+    await context.bot.send_message(chat_id=context.job.chat_id, text=reply)
+
+    if context.job_queue is not None:
+        context.job_queue.run_once(
+            send_session_followup,
+            when=600,
+            chat_id=context.job.chat_id,
+            data={"session_id": session_id},
+            name=f"session-followup-{session_id}-{datetime.now().timestamp()}",
+        )
+
+
+async def send_session_progress_reminder(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """send_session_progress_reminder
+
+    Args:
+        context: 텔레그램 핸들러 컨텍스트.
+
+    Returns:
+        None: 10분 단위 중간 진행 알림을 전송한다.
+    """
+    session_id = context.job.data["session_id"]
+    elapsed_minutes = context.job.data["elapsed_minutes"]
+    remaining_minutes = context.job.data["remaining_minutes"]
+    LOGGER.info(
+        "send_session_progress_reminder session_id=%s chat_id=%s elapsed=%s remaining=%s",
+        session_id,
+        context.job.chat_id,
+        elapsed_minutes,
+        remaining_minutes,
+    )
+    service: DeadlineCoachService = context.application.bot_data["service"]
+    session = service.get_session(session_id)
+    if not session or session["status"] == "completed":
+        return
+    user_id = session["user_id"]
+    reply = await asyncio.to_thread(
+        service.coach_nudge,
+        user_id,
+        (
+            f"타이머 세션 진행 중이다. {elapsed_minutes}분 지났고 {remaining_minutes}분 남았다. "
+            "사용자가 계속 번역하게 만드는 짧은 압박 메시지를 보내라. 지금은 /report가 아니라 계속 작업하라고 해라."
+        ),
+        session.get("project_id"),
+    )
+    await context.bot.send_message(chat_id=context.job.chat_id, text=reply)
 
 
 async def text_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -714,6 +791,9 @@ async def text_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     LOGGER.info("text_message user_id=%s text=%s", user["id"], update.message.text)
     if update.message.text == PROJECT_TEMPLATE_LABEL:
         await project_template_message(update, context)
+        return
+    if update.message.text == TIMER_TEMPLATE_LABEL:
+        await timer_template_message(update, context)
         return
     if update.message.text == TRANSLATE_TEMPLATE_LABEL:
         await translate_template_message(update, context)
@@ -771,11 +851,9 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("deadline_add", deadline_add_command))
     application.add_handler(CommandHandler("deadline_list", deadline_list_command))
     application.add_handler(CommandHandler("status", status_command))
+    application.add_handler(CommandHandler("timer", timer_command))
     application.add_handler(CommandHandler("translate", translate_command))
     application.add_handler(CommandHandler("image", image_command))
-    application.add_handler(CommandHandler("start10", start10_command))
-    application.add_handler(CommandHandler("start15", start15_command))
-    application.add_handler(CommandHandler("pomodoro", pomodoro_command))
     application.add_handler(CommandHandler("report", report_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_message))
     application.add_error_handler(error_handler)

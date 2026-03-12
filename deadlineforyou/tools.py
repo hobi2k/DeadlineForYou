@@ -3,15 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from deadlineforyou.domain import CoachingMode
-
 
 ToolExecutor = Callable[[dict[str, Any]], dict[str, Any]]
 
 EMPTY_OBJECT_SCHEMA = {"type": "object", "properties": {}, "additionalProperties": False}
 SESSION_COMMON_PROPERTIES = {
     "duration_minutes": {"type": "integer", "minimum": 1, "maximum": 180},
-    "mode": {"type": "string", "enum": [mode.value for mode in CoachingMode]},
 }
 SESSION_COMPLETE_PROPERTIES = {
     "session_id": {"type": "integer"},
@@ -61,18 +58,6 @@ class ToolContext:
     service: Any
     user_id: int
     project_id: int | None = None
-
-
-def _normalize_mode(value: str) -> CoachingMode:
-    """_normalize_mode
-
-    Args:
-        value: 문자열 모드 값.
-
-    Returns:
-        CoachingMode: 유효한 코칭 모드 enum.
-    """
-    return CoachingMode(value)
 
 
 def _session_start_result(session: dict, duration_minutes: int, include_instruction: bool) -> dict[str, Any]:
@@ -180,13 +165,12 @@ def _build_chat_tool_specs(context: ToolContext) -> list[DeadlineTool]:
 
     def start_focus_session(arguments: dict[str, Any]) -> dict[str, Any]:
         duration_minutes = int(arguments.get("duration_minutes", 10))
-        mode = _normalize_mode(arguments.get("mode", CoachingMode.force_start.value))
         project = context.service.get_active_project(context.user_id, context.project_id)
         session = context.service.start_session(
             context.user_id,
             project["id"] if project else None,
             duration_minutes,
-            mode,
+            "timer",
         )
         return _session_start_result(session, duration_minutes, include_instruction=True)
 
@@ -214,7 +198,7 @@ def _build_chat_tool_specs(context: ToolContext) -> list[DeadlineTool]:
         DeadlineTool(
             name="start_focus_session",
             description="집중 세션을 시작하고 세션 ID와 종료 시각을 반환한다.",
-            parameters=_tool_parameter_schema(SESSION_COMMON_PROPERTIES, ["duration_minutes", "mode"]),
+            parameters=_tool_parameter_schema(SESSION_COMMON_PROPERTIES, ["duration_minutes"]),
             execute=start_focus_session,
         ),
         DeadlineTool(

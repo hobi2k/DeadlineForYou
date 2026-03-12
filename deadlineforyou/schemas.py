@@ -4,7 +4,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
-from deadlineforyou.domain import CoachingMode, SessionStatus
+from deadlineforyou.domain import SessionStatus
 
 
 class UserCreate(BaseModel):
@@ -63,11 +63,7 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     reply: str
-    mode: CoachingMode
-    urgency_score: int
     timer_minutes: int
-    action_hint: str
-    report_hint: str
     executed_tools: list[str] = []
 
 
@@ -75,7 +71,7 @@ class SessionCreate(BaseModel):
     user_id: int
     project_id: int | None = None
     duration_minutes: int = Field(ge=1, le=180)
-    mode: CoachingMode = CoachingMode.force_start
+    mode: str = "timer"
 
 
 class SessionComplete(BaseModel):
@@ -87,7 +83,7 @@ class SessionResponse(BaseModel):
     id: int
     user_id: int
     project_id: int | None
-    mode: CoachingMode
+    mode: str
     duration_minutes: int
     status: SessionStatus
     started_at: datetime
@@ -101,8 +97,6 @@ class DailyReportResponse(BaseModel):
     date: str
     focus_minutes: int
     completed_units: int
-    avoidance_count: int
-    top_excuse: str | None
     summary: str
 
 
