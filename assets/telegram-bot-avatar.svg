@@ -1,0 +1,63 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="104" y1="84" x2="924" y2="952" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#101010"/>
+      <stop offset="0.5" stop-color="#1A1713"/>
+      <stop offset="1" stop-color="#3D210E"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="188" y1="144" x2="836" y2="876" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F7D24C"/>
+      <stop offset="1" stop-color="#FF7A00"/>
+    </linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" stroke="#FFFFFF" stroke-opacity="0.05"/>
+    </pattern>
+    <filter id="shadow" x="206" y="206" width="612" height="612" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+      <feOffset dy="18"/>
+      <feGaussianBlur stdDeviation="20"/>
+      <feComposite in2="hardAlpha" operator="out"/>
+      <feColorMatrix type="matrix" values="0 0 0 0 0.95 0 0 0 0 0.45 0 0 0 0 0.08 0 0 0 0.35 0"/>
+      <feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_1_1"/>
+      <feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_1_1" result="shape"/>
+    </filter>
+  </defs>
+
+  <rect width="1024" height="1024" rx="216" fill="#0B0B0B"/>
+  <rect x="36" y="36" width="952" height="952" rx="192" fill="url(#bg)"/>
+  <rect x="36" y="36" width="952" height="952" rx="192" fill="url(#grid)"/>
+
+  <g opacity="0.92">
+    <path d="M128 210L814 896" stroke="#F7D24C" stroke-width="44" stroke-linecap="round" stroke-opacity="0.18"/>
+    <path d="M170 142L884 856" stroke="#FF7A00" stroke-width="16" stroke-linecap="round" stroke-opacity="0.26"/>
+  </g>
+
+  <rect x="118" y="108" width="788" height="42" rx="21" fill="url(#accent)"/>
+  <rect x="118" y="874" width="284" height="22" rx="11" fill="#F7D24C"/>
+  <rect x="118" y="916" width="212" height="12" rx="6" fill="#FFFFFF" fill-opacity="0.14"/>
+
+  <g filter="url(#shadow)">
+    <rect x="246" y="228" width="532" height="532" rx="116" fill="#111111" stroke="#FFFFFF" stroke-opacity="0.08" stroke-width="4"/>
+    <rect x="286" y="268" width="452" height="452" rx="96" fill="#161616"/>
+
+    <circle cx="512" cy="438" r="148" fill="#0D0D0D" stroke="url(#accent)" stroke-width="22"/>
+    <circle cx="456" cy="406" r="22" fill="#F7D24C"/>
+    <circle cx="568" cy="406" r="22" fill="#F7D24C"/>
+    <rect x="420" y="490" width="184" height="34" rx="17" fill="#FF7A00"/>
+
+    <path d="M378 612C426 570 470 554 512 554C554 554 598 570 646 612" stroke="#FFF1C7" stroke-width="22" stroke-linecap="round" stroke-opacity="0.92"/>
+    <path d="M358 668H666" stroke="#FFFFFF" stroke-width="16" stroke-linecap="round" stroke-opacity="0.12"/>
+    <path d="M392 696H632" stroke="#FFFFFF" stroke-width="16" stroke-linecap="round" stroke-opacity="0.08"/>
+  </g>
+
+  <text x="512" y="164" fill="#140D07" font-family="monospace" font-size="52" font-weight="800" text-anchor="middle" letter-spacing="5">
+    DFY
+  </text>
+  <text x="512" y="840" fill="#FFF5D7" font-family="Arial, Helvetica, sans-serif" font-size="62" font-weight="800" text-anchor="middle">
+    締切監督
+  </text>
+  <text x="512" y="902" fill="#FFFFFF" fill-opacity="0.72" font-family="monospace" font-size="28" font-weight="700" text-anchor="middle" letter-spacing="2">
+    OPEN THE FILE
+  </text>
+</svg>

@@ -6,9 +6,16 @@ import json
 from sqlite3 import Row
 from typing import Any
 
+from deadlineforyou.config import get_settings
 from deadlineforyou.domain import CoachingMode, RuleEvaluation
 from deadlineforyou.prompts import SYSTEM_PROMPT, build_context_block
-from deadlineforyou.providers import LLMProvider
+from deadlineforyou.providers import (
+    ImageProvider,
+    LLMProvider,
+    TranslationProvider,
+    build_image_provider,
+    build_translation_provider,
+)
 from deadlineforyou.rules import detect_avoidance, evaluate_mode
 from deadlineforyou.storage import Database
 from deadlineforyou.tools import build_bound_chat_tools
@@ -39,6 +46,12 @@ class DeadlineCoachService:
         """
         self.database = database
         self.provider = provider
+        self.settings = get_settings()
+        self.translation_provider: TranslationProvider = build_translation_provider(
+            self.settings,
+            fallback_provider=provider,
+        )
+        self.image_provider: ImageProvider = build_image_provider(self.settings)
 
     def create_user(self, payload: dict) -> dict:
         """create_user
@@ -192,7 +205,7 @@ class DeadlineCoachService:
         # 다음 턴에서 최근 문맥을 재사용할 수 있도록 사용자/봇 메시지를 모두 저장한다.
         self.database.add_message(user_id, project["id"] if project else None, "user", message)
         tools = build_bound_chat_tools(self, user_id, project["id"] if project else None)
-        tool_schemas = [tool.openai_schema() for tool in tools.values()] if self.provider.supports_tool_calling() else None
+        tool_schemas = [tool.tool_call_schema() for tool in tools.values()] if self.provider.supports_tool_calling() else None
         messages: list[dict[str, Any]] = [*history, {"role": "user", "content": message}]
         executed_tools: list[str] = []
         reply = ""
@@ -271,6 +284,51 @@ class DeadlineCoachService:
             "top_excuse": top_excuse,
             "summary": summary,
         }
+
+    def translate_text(
+        self,
+        text: str,
+        source_language: str = "ja",
+        target_language: str = "ko",
+        style: str = "natural",
+    ) -> dict:
+        """translate_text
+
+        Args:
+            text: 번역할 원문.
+            source_language: 원문 언어.
+            target_language: 목표 언어.
+            style: 번역 스타일 힌트.
+
+        Returns:
+            dict: 번역 결과와 메타데이터.
+        """
+        return self.translation_provider.translate_text(
+            text=text,
+            source_language=source_language,
+            target_language=target_language,
+            style=style,
+        )
+
+    def generate_image(
+        self,
+        prompt: str,
+        size: str = "512x512",
+        style: str = "illustration",
+    ) -> dict:
+        """generate_image
+
+        Args:
+            prompt: 이미지 생성 프롬프트.
+            size: 생성 이미지 크기.
+            style: 이미지 스타일 힌트.
+
+        Returns:
+            dict: 저장 경로 또는 오류를 포함한 결과.
+        """
+        if self.settings.image_release_translation_before_generation:
+            self.translation_provider.unload()
+        return self.image_provider.generate_image(prompt=prompt, size=size, style=style)
 
     def _build_user_snapshot(self, user_id: int) -> str:
         """_build_user_snapshot

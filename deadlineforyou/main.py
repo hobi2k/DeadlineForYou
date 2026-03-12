@@ -11,12 +11,16 @@ from deadlineforyou.schemas import (
     ChatRequest,
     ChatResponse,
     DailyReportResponse,
+    ImageGenerateRequest,
+    ImageGenerateResponse,
     ProjectCreate,
     ProjectResponse,
     ProjectUpdate,
     SessionComplete,
     SessionCreate,
     SessionResponse,
+    TranslateRequest,
+    TranslateResponse,
     UserCreate,
     UserResponse,
 )
@@ -209,6 +213,43 @@ def daily_report(user_id: int):
     return service.build_daily_report(user_id)
 
 
+@app.post("/translate", response_model=TranslateResponse)
+def translate_text(payload: TranslateRequest):
+    """translate_text
+
+    Args:
+        payload: 번역 요청 본문.
+
+    Returns:
+        TranslateResponse: 번역 결과와 번역 메타데이터.
+    """
+    service: DeadlineCoachService = app.state.service
+    return service.translate_text(
+        text=payload.text,
+        source_language=payload.source_language,
+        target_language=payload.target_language,
+        style=payload.style,
+    )
+
+
+@app.post("/images/generate", response_model=ImageGenerateResponse)
+def generate_image(payload: ImageGenerateRequest):
+    """generate_image
+
+    Args:
+        payload: 이미지 생성 요청 본문.
+
+    Returns:
+        ImageGenerateResponse: 저장 경로나 오류 정보를 포함한 생성 결과.
+    """
+    service: DeadlineCoachService = app.state.service
+    return service.generate_image(
+        prompt=payload.prompt,
+        size=payload.size,
+        style=payload.style,
+    )
+
+
 @app.get("/meta/providers")
 def provider_meta():
     """provider_meta
@@ -222,8 +263,14 @@ def provider_meta():
     settings = get_settings()
     return {
         "llm_provider": settings.llm_provider,
-        "openai_model": settings.llm_model,
+        "translation_provider": settings.translation_provider,
+        "image_provider": settings.image_provider,
         "local_model_path": str(settings.local_model_path),
-        "supports": ["openai", "local", "scripted"],
+        "translation_local_model_path": str(settings.translation_local_model_path),
+        "image_local_model_path": str(settings.image_local_model_path),
+        "translation_lazy_load": settings.translation_lazy_load,
+        "image_lazy_load": settings.image_lazy_load,
+        "image_unload_after_generation": settings.image_unload_after_generation,
+        "supports": ["local", "scripted", "local_images"],
         "recommended_session_modes": [mode.value for mode in CoachingMode],
     }

@@ -104,3 +104,34 @@ class DailyReportResponse(BaseModel):
     avoidance_count: int
     top_excuse: str | None
     summary: str
+
+
+class TranslateRequest(BaseModel):
+    text: str
+    source_language: str = "ja"
+    target_language: str = "ko"
+    style: str = "natural"
+
+
+class TranslateResponse(BaseModel):
+    provider: str
+    source_language: str
+    target_language: str
+    style: str
+    translated_text: str
+
+
+class ImageGenerateRequest(BaseModel):
+    prompt: str
+    size: str = "512x512"
+    style: str = "illustration"
+
+
+class ImageGenerateResponse(BaseModel):
+    provider: str | None = None
+    prompt: str | None = None
+    style: str | None = None
+    size: str | None = None
+    file_path: str | None = None
+    error: str | None = None
+    message: str | None = None
