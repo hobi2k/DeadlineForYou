@@ -264,7 +264,7 @@ DFY_IMAGE_OUTPUT_DIR=data/generated_images
 
 ### 번역
 
-- Telegram: `/translate <원문>`
+- Telegram: `/translate <원문언어> | <목표언어> | <원문>`
 - API: `POST /translate`
 
 코칭 모델과 별도로 `rosetta_4b`를 사용한다.
@@ -316,7 +316,7 @@ DFY_IMAGE_OUTPUT_DIR=data/generated_images
 - 프로젝트 등록 양식 -> `/deadline_add 게임 시나리오 번역 | jp | ko | 120 | 2026-03-14 18:00 | 문장`
 - 또는 -> `게임 시나리오 번역 | jp | ko | 120 | 2026-03-14 18:00 | 문장`
 - 타이머 시작 양식 -> `/timer 25`
-- 번역 양식 -> `/translate 締切は明日の18時です。`
+- 번역 양식 -> `/translate jp | en | 締切は明日の18時です。`
 - 이미지 양식 -> `/image deadline enforcer poster, black and orange warning stripes`
 
 ## API 사용

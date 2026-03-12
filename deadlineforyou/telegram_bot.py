@@ -209,9 +209,10 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 "숫자가 없으면 반영되지 않는다.",
                 "여기 숫자는 이번 세션에서 실제로 끝낸 양만 넣는다.",
                 "",
-                "/translate <원문>",
+                "/translate <원문언어> | <목표언어> | <원문>",
                 "짧은 텍스트 번역",
-                "예: /translate 締切は明日の18時です。",
+                "예: /translate jp | en | 締切は明日の18時です。",
+                LANGUAGE_HELP_TEXT,
                 "",
                 "/image <프롬프트>",
                 "프롬프트 기반 이미지 생성",
@@ -588,12 +589,37 @@ async def translate_template_message(update: Update, context: ContextTypes.DEFAU
     await update.message.reply_text(
         "\n".join(
             [
-                "아래 줄을 복사해서 원문만 바꿔서 보내라.",
-                "/translate 締切は明日の18時です。",
+                "아래 줄을 복사해서 언어와 원문만 바꿔서 보내라.",
+                "/translate jp | en | 締切は明日の18時です。",
+                LANGUAGE_HELP_TEXT,
                 "자세한 설명은 /help",
             ]
         )
     )
+
+
+def _parse_translate_command_input(raw_text: str) -> tuple[str, str, str]:
+    """_parse_translate_command_input
+
+    Args:
+        raw_text: `/translate` 뒤에 입력된 원문.
+
+    Returns:
+        tuple[str, str, str]: 원문 언어, 목표 언어, 원문 텍스트.
+    """
+    parts = [part.strip() for part in raw_text.split("|", maxsplit=2)]
+    if len(parts) != 3:
+        raise ValueError("번역 형식이 맞지 않는다.")
+
+    source_language = _normalize_language_code(parts[0])
+    target_language = _normalize_language_code(parts[1])
+    text = parts[2].strip()
+    if not text:
+        raise ValueError("번역할 원문이 비어 있다.")
+
+    _validate_supported_language(source_language)
+    _validate_supported_language(target_language)
+    return source_language, target_language, text
 
 
 async def timer_template_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -659,14 +685,35 @@ async def translate_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     await _ensure_user(update, context)
     LOGGER.info("translate_command chat_id=%s raw_text=%s", update.effective_chat.id, update.message.text)
     service: DeadlineCoachService = context.application.bot_data["service"]
-    raw_text = " ".join(context.args).strip()
+    raw_text = update.message.text.removeprefix("/translate").strip()
     if not raw_text:
         await update.message.reply_text(
             "\n".join(
                 [
-                    "번역할 원문이 비어 있다.",
+                    "번역 정보가 비어 있다.",
+                    "형식:",
+                    "/translate <원문언어> | <목표언어> | <원문>",
                     "예시:",
-                    "/translate 締切は明日の18時です。",
+                    "/translate jp | en | 締切は明日の18時です。",
+                    LANGUAGE_HELP_TEXT,
+                    "전체 설명은 /help",
+                ]
+            )
+        )
+        return
+
+    try:
+        source_language, target_language, source_text = _parse_translate_command_input(raw_text)
+    except ValueError:
+        await update.message.reply_text(
+            "\n".join(
+                [
+                    "번역 형식이 맞지 않는다.",
+                    "형식:",
+                    "/translate <원문언어> | <목표언어> | <원문>",
+                    "예시:",
+                    "/translate jp | en | 締切は明日の18時です。",
+                    LANGUAGE_HELP_TEXT,
                     "전체 설명은 /help",
                 ]
             )
@@ -675,7 +722,12 @@ async def translate_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     await update.message.reply_text("번역 중이다. 잠깐 기다려라.")
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-    result = await asyncio.to_thread(service.translate_text, text=raw_text)
+    result = await asyncio.to_thread(
+        service.translate_text,
+        text=source_text,
+        source_language=source_language,
+        target_language=target_language,
+    )
     await update.message.reply_text(f"번역 결과:\n{result['translated_text']}")
 
 
@@ -1016,7 +1068,9 @@ async def text_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await update.message.reply_text(f"번역 결과:\n{translation_result['translated_text']}")
         return
     if likely_translation_request:
-        await update.message.reply_text("번역 요청으로 이해했지만 모델이 번역 도구를 제대로 호출하지 못했다. 한 번 더 보내거나 /translate 명령을 써라.")
+        await update.message.reply_text(
+            "번역 요청으로 이해했지만 모델이 번역 도구를 제대로 호출하지 못했다. 한 번 더 보내거나 /translate <원문언어> | <목표언어> | <원문> 형식을 써라."
+        )
         return
     image_result = tool_results.get("generate_image") if "generate_image" in executed_tools else None
     if image_result and image_result.get("file_path") and not image_result.get("error"):
