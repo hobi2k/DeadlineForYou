@@ -48,6 +48,11 @@ User
          +─ SQLite Storage
 ```
 
+## 현재 시연 영상
+
+- [프로젝트 매니징 봇 시연 영상](https://drive.google.com/file/d/1854-CSyinTM_a_PU6KpRTAk8lH7Wbhq-/view?usp=sharing)
+
+
 ## 설치
 
 ```bash

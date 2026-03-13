@@ -765,22 +765,42 @@ def _parse_local_tool_calls(output: str) -> tuple[list[ToolCall], str]:
     Returns:
         tuple[list[ToolCall], str]: 파싱된 tool call 목록과 정리된 일반 텍스트.
     """
-    matches = re.findall(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", output, flags=re.DOTALL)
+    blocks: list[str] = []
+    for pattern in (
+        r"<tool_call>\s*(.*?)\s*</tool_call>",
+        r"<function_call>\s*(.*?)\s*</function_call>",
+        r"```json\s*(\{.*?\}|\[.*?\])\s*```",
+    ):
+        blocks.extend(re.findall(pattern, output, flags=re.DOTALL))
+
     tool_calls: list[ToolCall] = []
-    for match in matches:
+    for block in blocks:
+        payload_text = block.strip()
         try:
-            payload = json.loads(match)
+            payload = json.loads(payload_text)
         except json.JSONDecodeError:
             continue
-        name = payload.get("name")
-        arguments = payload.get("arguments", {})
-        if isinstance(arguments, str):
-            try:
-                arguments = json.loads(arguments)
-            except json.JSONDecodeError:
-                arguments = {}
-        if isinstance(name, str) and isinstance(arguments, dict):
-            tool_calls.append(ToolCall(id=f"local-{uuid.uuid4().hex[:10]}", name=name, arguments=arguments))
 
-    cleaned = re.sub(r"<tool_call>\s*\{.*?\}\s*</tool_call>", "", output, flags=re.DOTALL).strip()
+        payloads = payload if isinstance(payload, list) else [payload]
+        for item in payloads:
+            if not isinstance(item, dict):
+                continue
+            name = item.get("name")
+            arguments = item.get("arguments", {})
+            if isinstance(arguments, str):
+                try:
+                    arguments = json.loads(arguments)
+                except json.JSONDecodeError:
+                    arguments = {}
+            if isinstance(name, str) and isinstance(arguments, dict):
+                tool_calls.append(ToolCall(id=f"local-{uuid.uuid4().hex[:10]}", name=name, arguments=arguments))
+
+    cleaned = output
+    for pattern in (
+        r"<tool_call>\s*(.*?)\s*</tool_call>",
+        r"<function_call>\s*(.*?)\s*</function_call>",
+        r"```json\s*(\{.*?\}|\[.*?\])\s*```",
+    ):
+        cleaned = re.sub(pattern, "", cleaned, flags=re.DOTALL)
+    cleaned = cleaned.strip()
     return tool_calls, cleaned

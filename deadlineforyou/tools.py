@@ -247,13 +247,13 @@ def _build_chat_tool_specs(context: ToolContext) -> list[DeadlineTool]:
         ),
         DeadlineTool(
             name="translate_text",
-            description="짧은 텍스트를 번역한다.",
+            description="사용자가 특정 문장을 다른 언어로 번역해달라고 하면 호출한다. 결과는 번역문만 반환한다.",
             parameters=_tool_parameter_schema(TRANSLATION_PROPERTIES, ["text"]),
             execute=lambda arguments: _translate(context.service, arguments),
         ),
         DeadlineTool(
             name="generate_image",
-            description="프롬프트 기반 이미지를 생성한다. 별도 이미지 provider가 필요하다.",
+            description="사용자가 이미지, 그림, 포스터, 일러스트 생성 요청을 하면 호출한다. prompt에는 실제 그리고 싶은 내용을 넣는다.",
             parameters=_tool_parameter_schema(IMAGE_PROPERTIES, ["prompt"]),
             execute=lambda arguments: _generate_image(context.service, arguments),
         ),
