@@ -251,7 +251,7 @@ def assist_file_translation(file_id: int, payload: FileAssistTranslateRequest):
         payload: 번역 보조 요청 본문.
 
     Returns:
-        FileAssistTranslateResponse: 파일 일부 번역 초안 결과.
+        FileAssistTranslateResponse: 파일 전체 번역 결과.
     """
     service: DeadlineCoachService = app.state.service
     try:
@@ -260,7 +260,6 @@ def assist_file_translation(file_id: int, payload: FileAssistTranslateRequest):
             source_language=payload.source_language,
             target_language=payload.target_language,
             style=payload.style,
-            max_chars=payload.max_chars,
         )
     except ValueError:
         raise HTTPException(status_code=404, detail="Project file not found") from None

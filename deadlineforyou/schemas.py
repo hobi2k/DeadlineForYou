@@ -246,7 +246,6 @@ class FileAssistTranslateRequest(BaseModel):
     source_language: str = "jp"
     target_language: str = "ko"
     style: str = "natural"
-    max_chars: int = Field(default=1200, ge=1, le=8000)
 
     @field_validator("source_language", "target_language")
     @classmethod
@@ -270,8 +269,8 @@ class FileAssistTranslateResponse(BaseModel):
     file_name: str
     source_language: str
     target_language: str
-    translated_excerpt: str
-    excerpt_chars: int
+    translated_text: str
+    source_chars: int
 
 
 class ImageGenerateRequest(BaseModel):

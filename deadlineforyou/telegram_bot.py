@@ -181,7 +181,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 "직접 명령:",
                 "- 번역: /translate jp | en | 締切は明日の18時です。",
                 "- 이미지: /image happy hamster, clean illustration",
-                "- 파일 일부 번역 보조: /file_assist 3 | jp | ko",
+                "- 파일 번역 보조: /file_assist 3 | jp | ko",
+                "- /file_assist 는 현재 파일 앞부분 최대 1500자만 번역한다.",
                 "",
                 LANGUAGE_HELP_TEXT,
                 "더 자세한 설명은 /help",
@@ -291,7 +292,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 "업로드 후 파일 ID를 알려준다.",
                 "",
                 "/file_assist <파일ID> | <원문언어> | <목표언어>",
-                "업로드한 파일 일부를 바로 번역 보조한다.",
+                "업로드한 파일의 앞부분 최대 1500자를 번역 보조한다.",
                 "결과는 텍스트 메시지가 아니라 .txt 파일로 돌려준다.",
                 "예: /file_assist 3 | jp | ko",
                 "",
@@ -1118,6 +1119,7 @@ async def file_assist_template_message(update: Update, context: ContextTypes.DEF
             [
                 "파일을 먼저 올려서 파일 ID를 확인한 뒤 아래처럼 보내라.",
                 "/file_assist 3 | jp | ko",
+                "현재는 파일 전체가 아니라 앞부분 최대 1500자만 번역한다.",
                 "결과는 채팅 장문이 아니라 .txt 파일로 온다.",
                 "자세한 설명은 /help",
             ]
@@ -1270,7 +1272,7 @@ async def file_assist_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         context: 텔레그램 핸들러 컨텍스트.
 
     Returns:
-        None: 업로드된 파일 일부 번역 보조 결과를 전송한다.
+        None: 업로드된 파일 앞부분 최대 1500자 번역 결과를 전송한다.
     """
     await _ensure_user(update, context)
     raw_text = update.message.text.removeprefix("/file_assist").strip()
@@ -1304,7 +1306,7 @@ async def file_assist_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
     service: DeadlineCoachService = context.application.bot_data["service"]
-    await update.message.reply_text("파일 일부를 번역 중이다. 잠깐 기다려라.")
+    await update.message.reply_text("파일 앞부분 최대 1500자를 번역 중이다. 잠깐 기다려라.")
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
     try:
         result = await asyncio.to_thread(
@@ -1320,13 +1322,13 @@ async def file_assist_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     output_dir = Path("data/file_assists")
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"file_assist_{file_id}_{uuid4().hex[:8]}.txt"
-    output_text = result["translated_excerpt"].strip()
+    output_text = result["translated_text"].strip()
     output_path.write_text(output_text, encoding="utf-8")
     with output_path.open("rb") as output_file:
         await update.message.reply_document(
             document=output_file,
-            filename=f"{Path(result['file_name']).stem}_assist_ko.txt",
-            caption="파일 번역 보조 결과.",
+            filename=f"{Path(result['file_name']).stem}_translated.txt",
+            caption="파일 번역 결과. 현재는 앞부분 최대 1500자만 포함한다.",
             read_timeout=TELEGRAM_READ_TIMEOUT_SECONDS,
             write_timeout=TELEGRAM_WRITE_TIMEOUT_SECONDS,
             connect_timeout=TELEGRAM_CONNECT_TIMEOUT_SECONDS,
@@ -1696,6 +1698,7 @@ async def document_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 f"자동 집계: {created['source_segments']} 세그먼트, {created['source_chars']}자",
                 f"현재 프로젝트 파일: 남은 {overview['remaining_file_count']}개 / 전체 {overview['file_count']}개",
                 f"보조 번역 예시: /file_assist {created['id']} | {project['source_language']} | {project['target_language']}",
+                "파일 번역 보조는 현재 앞부분 최대 1500자까지 처리한다.",
             ]
         )
     )

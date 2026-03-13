@@ -31,7 +31,6 @@ FILE_ASSIST_PROPERTIES = {
     "source_language": {"type": "string"},
     "target_language": {"type": "string"},
     "style": {"type": "string"},
-    "max_chars": {"type": "integer", "minimum": 1, "maximum": 8000},
 }
 
 
@@ -207,7 +206,6 @@ def _build_chat_tool_specs(context: ToolContext) -> list[DeadlineTool]:
             source_language=str(arguments.get("source_language", "jp")),
             target_language=str(arguments.get("target_language", "ko")),
             style=str(arguments.get("style", "natural")),
-            max_chars=int(arguments.get("max_chars", 1200)),
         )
 
     return [
@@ -261,8 +259,8 @@ def _build_chat_tool_specs(context: ToolContext) -> list[DeadlineTool]:
         ),
         DeadlineTool(
             name="assist_file_translation",
-            description="프로젝트 파일 일부를 잘라 번역 초안을 만든다.",
-            parameters=_tool_parameter_schema(FILE_ASSIST_PROPERTIES, ["file_id"]),
+            description="프로젝트 파일 전체 번역 초안을 만든다.",
+            parameters=_tool_parameter_schema(FILE_ASSIST_PROPERTIES, ["file_id", "source_language", "target_language"]),
             execute=assist_file_translation,
         ),
     ]

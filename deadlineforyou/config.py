@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     app_name: str = "DeadlineForYou"
     database_path: Path = Field(default=Path("data/deadlineforyou.db"))
     llm_provider: str = "local"
-    local_model_path: Path = Field(default=Path("deadlineforyou/models/saya_rp_4b_v3"))
+    local_model_path: Path = Field(default=Path("deadlineforyou/models/qwen3-4b"))
     local_device_map: str = "auto"
     local_max_new_tokens: int = 550
     local_temperature: float = 0.7

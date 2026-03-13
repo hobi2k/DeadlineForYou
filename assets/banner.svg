@@ -23,26 +23,26 @@
   <rect x="72" y="584" width="212" height="10" rx="5" fill="#FFFFFF" fill-opacity="0.16"/>
   <rect x="302" y="584" width="132" height="10" rx="5" fill="#FFFFFF" fill-opacity="0.08"/>
 
-  <path d="M870 130L1172 432" stroke="#F7D24C" stroke-width="26" stroke-linecap="round" stroke-opacity="0.16"/>
-  <path d="M820 188L1122 490" stroke="#FF7A00" stroke-width="12" stroke-linecap="round" stroke-opacity="0.3"/>
-  <path d="M920 110L1222 412" stroke="#FFF4CF" stroke-width="4" stroke-linecap="round" stroke-opacity="0.2"/>
+  <path d="M930 132L1204 406" stroke="#F7D24C" stroke-width="26" stroke-linecap="round" stroke-opacity="0.16"/>
+  <path d="M876 192L1150 466" stroke="#FF7A00" stroke-width="12" stroke-linecap="round" stroke-opacity="0.3"/>
+  <path d="M982 112L1244 374" stroke="#FFF4CF" stroke-width="4" stroke-linecap="round" stroke-opacity="0.2"/>
 
   <g opacity="0.96">
-    <rect x="846" y="214" width="274" height="252" rx="24" fill="#141414" stroke="#F7D24C" stroke-opacity="0.35" stroke-width="2"/>
-    <rect x="876" y="248" width="214" height="12" rx="6" fill="#F7D24C"/>
-    <rect x="876" y="286" width="178" height="12" rx="6" fill="#FFFFFF" fill-opacity="0.84"/>
-    <rect x="876" y="322" width="198" height="12" rx="6" fill="#FFFFFF" fill-opacity="0.7"/>
-    <rect x="876" y="358" width="162" height="12" rx="6" fill="#FFFFFF" fill-opacity="0.58"/>
-    <rect x="876" y="406" width="116" height="26" rx="13" fill="#FF7A00"/>
+    <rect x="920" y="206" width="236" height="218" rx="24" fill="#141414" stroke="#F7D24C" stroke-opacity="0.35" stroke-width="2"/>
+    <rect x="952" y="240" width="176" height="12" rx="6" fill="#F7D24C"/>
+    <rect x="952" y="278" width="150" height="12" rx="6" fill="#FFFFFF" fill-opacity="0.84"/>
+    <rect x="952" y="314" width="170" height="12" rx="6" fill="#FFFFFF" fill-opacity="0.7"/>
+    <rect x="952" y="350" width="134" height="12" rx="6" fill="#FFFFFF" fill-opacity="0.58"/>
+    <rect x="952" y="392" width="100" height="26" rx="13" fill="#FF7A00"/>
   </g>
 
   <text x="84" y="170" fill="#F7D24C" font-family="monospace" font-size="24" font-weight="700" letter-spacing="3.2">
     SHIMEKIRI KANTOKU ACTIVE
   </text>
-  <text x="84" y="278" fill="#FFF7D8" font-family="Arial, Helvetica, sans-serif" font-size="88" font-weight="800">
+  <text x="84" y="278" fill="#FFF7D8" font-family="Arial, Helvetica, sans-serif" font-size="80" font-weight="800">
     DeadlineForYou
   </text>
-  <text x="84" y="344" fill="#FFFFFF" fill-opacity="0.82" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="700">
+  <text x="84" y="340" fill="#FFFFFF" fill-opacity="0.82" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="700">
     Open the file. Translate the first line. Report back.
   </text>
   <text x="84" y="412" fill="#FFFFFF" fill-opacity="0.66" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="400">

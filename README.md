@@ -312,7 +312,7 @@ DFY_IMAGE_OUTPUT_DIR=data/generated_images
 /image happy hamster, clean illustration
 ```
 
-파일 일부 번역 보조:
+파일 번역 보조:
 
 ```text
 /file_assist 3 | jp | ko
@@ -328,7 +328,9 @@ DFY_IMAGE_OUTPUT_DIR=data/generated_images
 ```
 
 ```text
-햄스터 이미지를 생성해줘.
+아래 이미지를 생성해줘.
+
+happy hamster
 ```
 
 이 경우에는 일반 챗으로 들어가고, LLM이 tool calling으로 번역/이미지 도구를 쓸지 스스로 판단한다.
@@ -496,7 +498,7 @@ DFY_IMAGE_OUTPUT_DIR=data/generated_images
 - 활성 프로젝트가 있는 상태에서 `.txt` 파일을 그냥 올리면 된다.
 - 시스템이 파일을 프로젝트 파일로 등록한다.
 - 업로드 직후 파일 ID와 자동 집계 결과를 알려준다.
-- 이어서 `/file_assist <파일ID> | <원문언어> | <목표언어>` 로 일부 구간 번역 초안을 받을 수 있다.
+- 이어서 `/file_assist <파일ID> | <원문언어> | <목표언어>` 로 파일 앞부분 최대 `1500자` 번역 초안을 받을 수 있다.
 - 결과는 긴 채팅 텍스트가 아니라 `.txt` 파일로 돌려준다.
 
 API:

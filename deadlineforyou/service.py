@@ -496,7 +496,6 @@ class DeadlineCoachService:
         source_language: str = "jp",
         target_language: str = "ko",
         style: str = "natural",
-        max_chars: int = 1200,
     ) -> dict:
         """assist_file_translation
 
@@ -505,20 +504,16 @@ class DeadlineCoachService:
             source_language: 원문 언어.
             target_language: 목표 언어.
             style: 번역 스타일 힌트.
-            max_chars: 한번에 번역 보조할 최대 글자 수.
 
         Returns:
-            dict: 파일 일부 번역 결과.
+            dict: 파일 앞부분 최대 1500자 번역 결과.
         """
         file_row = self.get_project_file(file_id)
         if not file_row:
             raise ValueError("file_not_found")
 
-        translated_text = file_row.get("translated_text", "")
         source_text = file_row.get("source_text", "")
-        source_excerpt = source_text[len(translated_text) : len(translated_text) + max_chars].strip()
-        if not source_excerpt:
-            source_excerpt = source_text[:max_chars].strip()
+        source_excerpt = source_text[:1500].strip()
 
         result = self.translation_provider.translate_text(
             text=source_excerpt,
@@ -531,8 +526,8 @@ class DeadlineCoachService:
             "file_name": file_row["name"],
             "source_language": source_language,
             "target_language": target_language,
-            "translated_excerpt": result["translated_text"],
-            "excerpt_chars": len(source_excerpt),
+            "translated_text": result["translated_text"],
+            "source_chars": len(source_excerpt),
         }
 
     def translate_text(
