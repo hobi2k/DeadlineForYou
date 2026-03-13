@@ -31,6 +31,52 @@ def _row_to_dict(row: Row | None) -> dict | None:
 
 
 class DeadlineCoachService:
+    def _planner_snapshot(self, project: dict | None) -> dict[str, Any]:
+        """_planner_snapshot
+
+        Args:
+            project: 활성 프로젝트 스냅샷 또는 None.
+
+        Returns:
+            dict[str, Any]: 남은 분량과 필요 페이스를 계산한 플래너 정보.
+        """
+        if not project:
+            return {
+                "project_id": 0,
+                "remaining_units": 0,
+                "unit_label": "단위",
+                "remaining_days": 0.0,
+                "required_units_per_day": 0.0,
+                "required_units_per_hour": 0.0,
+                "file_backlog_count": 0,
+                "delayed_file_count": 0,
+                "summary": "활성 프로젝트가 없다.",
+            }
+
+        deadline_at = datetime.fromisoformat(project["deadline_at"]).astimezone(UTC)
+        remaining_seconds = max((deadline_at - datetime.now(UTC)).total_seconds(), 0.0)
+        remaining_units = max(int(project["total_units"]) - int(project["completed_units"]), 0)
+        remaining_days = round(remaining_seconds / 86400, 2)
+        remaining_hours = max(remaining_seconds / 3600, 0.0)
+        workload = self.project_workload_summary(project["id"])
+        required_units_per_day = round(remaining_units / max(remaining_days, 1 / 24), 2) if remaining_units else 0.0
+        required_units_per_hour = round(remaining_units / max(remaining_hours, 1.0), 2) if remaining_units else 0.0
+        summary = (
+            f"남은 {remaining_units}{project['unit_label']}, 약 {remaining_days}일. "
+            f"하루 최소 {required_units_per_day}{project['unit_label']} 필요."
+        )
+        return {
+            "project_id": int(project["id"]),
+            "remaining_units": remaining_units,
+            "unit_label": project["unit_label"],
+            "remaining_days": remaining_days,
+            "required_units_per_day": required_units_per_day,
+            "required_units_per_hour": required_units_per_hour,
+            "file_backlog_count": int(workload["remaining_file_count"]),
+            "delayed_file_count": int(workload["delayed_file_count"]),
+            "summary": summary,
+        }
+
     def _recommend_timer_minutes(self, project: dict | None) -> int:
         """_recommend_timer_minutes
 
@@ -85,6 +131,17 @@ class DeadlineCoachService:
         """
         return dict(self.database.create_user(payload))
 
+    def list_users(self) -> list[dict]:
+        """list_users
+
+        Args:
+            없음.
+
+        Returns:
+            list[dict]: 전체 사용자 목록.
+        """
+        return [dict(row) for row in self.database.list_users()]
+
     def get_or_create_user(self, platform_user_id: str, nickname: str, timezone: str = "Asia/Seoul") -> dict:
         """get_or_create_user
 
@@ -119,6 +176,51 @@ class DeadlineCoachService:
         """
         return dict(self.database.create_project(payload))
 
+    def create_project_file(self, payload: dict) -> dict:
+        """create_project_file
+
+        Args:
+            payload: 프로젝트 파일 생성 페이로드.
+
+        Returns:
+            dict: 저장된 파일 레코드.
+        """
+        return dict(self.database.create_project_file(payload))
+
+    def list_project_files(self, project_id: int) -> list[dict]:
+        """list_project_files
+
+        Args:
+            project_id: 프로젝트 식별자.
+
+        Returns:
+            list[dict]: 프로젝트에 연결된 파일 목록.
+        """
+        return [dict(row) for row in self.database.list_project_files(project_id)]
+
+    def update_project_file(self, file_id: int, updates: dict) -> dict | None:
+        """update_project_file
+
+        Args:
+            file_id: 프로젝트 파일 식별자.
+            updates: 부분 갱신 페이로드.
+
+        Returns:
+            dict | None: 파일을 찾으면 갱신된 레코드, 없으면 None.
+        """
+        return _row_to_dict(self.database.update_project_file(file_id, updates))
+
+    def get_project_file(self, file_id: int) -> dict | None:
+        """get_project_file
+
+        Args:
+            file_id: 프로젝트 파일 식별자.
+
+        Returns:
+            dict | None: 파일 레코드 또는 None.
+        """
+        return _row_to_dict(self.database.get_project_file(file_id))
+
     def list_projects(self, user_id: int) -> list[dict]:
         """list_projects
 
@@ -129,6 +231,58 @@ class DeadlineCoachService:
             list[dict]: 사용자가 소유한 전체 프로젝트 목록.
         """
         return [dict(row) for row in self.database.list_projects_for_user(user_id)]
+
+    def project_workload_summary(self, project_id: int) -> dict:
+        """project_workload_summary
+
+        Args:
+            project_id: 프로젝트 식별자.
+
+        Returns:
+            dict: 파일 기반 자동 작업량 집계.
+        """
+        row = dict(self.database.project_workload_summary(project_id))
+        row["project_id"] = project_id
+        row["remaining_chars"] = max(int(row["total_chars"]) - int(row["translated_chars"]), 0)
+        row["remaining_segments"] = max(int(row["total_segments"]) - int(row["translated_segments"]), 0)
+        return row
+
+    def build_project_planner(self, project_id: int) -> dict:
+        """build_project_planner
+
+        Args:
+            project_id: 프로젝트 식별자.
+
+        Returns:
+            dict: 남은 분량과 필요 페이스를 계산한 플래너 결과.
+        """
+        return self._planner_snapshot(self.get_active_project(user_id=0, project_id=project_id))
+
+    def build_project_overview(self, project_id: int) -> dict:
+        """build_project_overview
+
+        Args:
+            project_id: 프로젝트 식별자.
+
+        Returns:
+            dict: 프로젝트 상태, 파일 통계, 플래너를 묶은 개요.
+        """
+        project = _row_to_dict(self.database.get_project(project_id))
+        if not project:
+            raise ValueError("project_not_found")
+        workload = self.project_workload_summary(project_id)
+        planner = self._planner_snapshot(project)
+        return {
+            "project": project,
+            "planner": planner,
+            "file_count": int(workload["file_count"]),
+            "remaining_file_count": int(workload["remaining_file_count"]),
+            "delayed_file_count": int(workload["delayed_file_count"]),
+            "total_chars": int(workload["total_chars"]),
+            "total_segments": int(workload["total_segments"]),
+            "translated_chars": int(workload["translated_chars"]),
+            "translated_segments": int(workload["translated_segments"]),
+        }
 
     def update_project(self, project_id: int, updates: dict) -> dict | None:
         """update_project
@@ -141,6 +295,17 @@ class DeadlineCoachService:
             dict | None: 프로젝트를 찾으면 갱신된 레코드, 없으면 None.
         """
         return _row_to_dict(self.database.update_project(project_id, updates))
+
+    def delete_project(self, project_id: int) -> dict | None:
+        """delete_project
+
+        Args:
+            project_id: 삭제할 프로젝트 식별자.
+
+        Returns:
+            dict | None: 삭제된 프로젝트 레코드. 없으면 None.
+        """
+        return _row_to_dict(self.database.delete_project(project_id))
 
     def start_session(self, user_id: int, project_id: int | None, duration_minutes: int, mode: str) -> dict:
         """start_session
@@ -221,7 +386,7 @@ class DeadlineCoachService:
         # 모델 호출 전에 현재 사용자 상태, 프로젝트 상태, 권장 타이머를 구조화해서 묶는다.
         user_snapshot = self._build_user_snapshot(user_id)
         project_snapshot = self._build_project_snapshot(project)
-        timer_snapshot = self._build_timer_snapshot(timer_minutes)
+        timer_snapshot = self._build_timer_snapshot(timer_minutes, project)
         context_block = build_context_block(user_snapshot, project_snapshot, timer_snapshot)
 
         # 다음 턴에서 최근 문맥을 재사용할 수 있도록 사용자/봇 메시지를 모두 저장한다.
@@ -325,6 +490,51 @@ class DeadlineCoachService:
             "summary": summary,
         }
 
+    def assist_file_translation(
+        self,
+        file_id: int,
+        source_language: str = "jp",
+        target_language: str = "ko",
+        style: str = "natural",
+        max_chars: int = 1200,
+    ) -> dict:
+        """assist_file_translation
+
+        Args:
+            file_id: 번역 보조를 실행할 파일 식별자.
+            source_language: 원문 언어.
+            target_language: 목표 언어.
+            style: 번역 스타일 힌트.
+            max_chars: 한번에 번역 보조할 최대 글자 수.
+
+        Returns:
+            dict: 파일 일부 번역 결과.
+        """
+        file_row = self.get_project_file(file_id)
+        if not file_row:
+            raise ValueError("file_not_found")
+
+        translated_text = file_row.get("translated_text", "")
+        source_text = file_row.get("source_text", "")
+        source_excerpt = source_text[len(translated_text) : len(translated_text) + max_chars].strip()
+        if not source_excerpt:
+            source_excerpt = source_text[:max_chars].strip()
+
+        result = self.translation_provider.translate_text(
+            text=source_excerpt,
+            source_language=source_language,
+            target_language=target_language,
+            style=style,
+        )
+        return {
+            "file_id": file_id,
+            "file_name": file_row["name"],
+            "source_language": source_language,
+            "target_language": target_language,
+            "translated_excerpt": result["translated_text"],
+            "excerpt_chars": len(source_excerpt),
+        }
+
     def translate_text(
         self,
         text: str,
@@ -404,21 +614,30 @@ class DeadlineCoachService:
         deadline_at = datetime.fromisoformat(project["deadline_at"]).astimezone(UTC)
         remaining = deadline_at - datetime.now(UTC)
         hours_left = max(round(remaining.total_seconds() / 3600, 1), 0.0)
+        workload = self.project_workload_summary(project["id"])
         return (
             f"title={project['title']}\n"
             f"progress={project['completed_units']}/{project['total_units']} {project['unit_label']}\n"
             f"deadline_at={project['deadline_at']}\n"
             f"hours_left={hours_left}\n"
+            f"remaining_files={workload['remaining_file_count']}\n"
+            f"delayed_files={workload['delayed_file_count']}\n"
             f"status={project['status']}"
         )
 
-    def _build_timer_snapshot(self, timer_minutes: int) -> str:
+    def _build_timer_snapshot(self, timer_minutes: int, project: dict | None) -> str:
         """_build_timer_snapshot
 
         Args:
             timer_minutes: 현재 상태에서 권장하는 타이머 분 수.
+            project: 활성 프로젝트 스냅샷 또는 None.
 
         Returns:
             str: 프롬프트 주입용 권장 타이머 가이드 문자열.
         """
-        return f"recommended_timer_minutes={timer_minutes}"
+        planner = self._planner_snapshot(project)
+        return (
+            f"recommended_timer_minutes={timer_minutes}\n"
+            f"planner_summary={planner['summary']}\n"
+            f"required_units_per_day={planner['required_units_per_day']}"
+        )

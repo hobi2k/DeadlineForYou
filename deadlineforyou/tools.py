@@ -26,6 +26,13 @@ IMAGE_PROPERTIES = {
     "size": {"type": "string"},
     "style": {"type": "string"},
 }
+FILE_ASSIST_PROPERTIES = {
+    "file_id": {"type": "integer"},
+    "source_language": {"type": "string"},
+    "target_language": {"type": "string"},
+    "style": {"type": "string"},
+    "max_chars": {"type": "integer", "minimum": 1, "maximum": 8000},
+}
 
 
 @dataclass(slots=True)
@@ -188,6 +195,21 @@ def _build_chat_tool_specs(context: ToolContext) -> list[DeadlineTool]:
     def list_projects(_: dict[str, Any]) -> dict[str, Any]:
         return {"projects": context.service.list_projects(context.user_id)}
 
+    def get_project_overview(_: dict[str, Any]) -> dict[str, Any]:
+        project = context.service.get_active_project(context.user_id, context.project_id)
+        if not project:
+            return {"error": "active_project_not_found"}
+        return context.service.build_project_overview(project["id"])
+
+    def assist_file_translation(arguments: dict[str, Any]) -> dict[str, Any]:
+        return context.service.assist_file_translation(
+            file_id=int(arguments["file_id"]),
+            source_language=str(arguments.get("source_language", "jp")),
+            target_language=str(arguments.get("target_language", "ko")),
+            style=str(arguments.get("style", "natural")),
+            max_chars=int(arguments.get("max_chars", 1200)),
+        )
+
     return [
         DeadlineTool(
             name="get_active_project",
@@ -220,6 +242,12 @@ def _build_chat_tool_specs(context: ToolContext) -> list[DeadlineTool]:
             execute=list_projects,
         ),
         DeadlineTool(
+            name="get_project_overview",
+            description="활성 프로젝트의 파일 수, 남은 파일, 지연 파일, 플래너 요약을 조회한다.",
+            parameters=EMPTY_OBJECT_SCHEMA,
+            execute=get_project_overview,
+        ),
+        DeadlineTool(
             name="translate_text",
             description="짧은 텍스트를 번역한다.",
             parameters=_tool_parameter_schema(TRANSLATION_PROPERTIES, ["text"]),
@@ -230,6 +258,12 @@ def _build_chat_tool_specs(context: ToolContext) -> list[DeadlineTool]:
             description="프롬프트 기반 이미지를 생성한다. 별도 이미지 provider가 필요하다.",
             parameters=_tool_parameter_schema(IMAGE_PROPERTIES, ["prompt"]),
             execute=lambda arguments: _generate_image(context.service, arguments),
+        ),
+        DeadlineTool(
+            name="assist_file_translation",
+            description="프로젝트 파일 일부를 잘라 번역 초안을 만든다.",
+            parameters=_tool_parameter_schema(FILE_ASSIST_PROPERTIES, ["file_id"]),
+            execute=assist_file_translation,
         ),
     ]
 

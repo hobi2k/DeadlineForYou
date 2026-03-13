@@ -60,6 +60,35 @@ CREATE TABLE IF NOT EXISTS messages (
     FOREIGN KEY(user_id) REFERENCES users(id),
     FOREIGN KEY(project_id) REFERENCES projects(id)
 );
+
+CREATE TABLE IF NOT EXISTS project_files (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    source_text TEXT NOT NULL,
+    translated_text TEXT NOT NULL DEFAULT '',
+    source_chars INTEGER NOT NULL DEFAULT 0,
+    source_lines INTEGER NOT NULL DEFAULT 0,
+    source_segments INTEGER NOT NULL DEFAULT 0,
+    translated_chars INTEGER NOT NULL DEFAULT 0,
+    translated_lines INTEGER NOT NULL DEFAULT 0,
+    translated_segments INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'pending',
+    due_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY(project_id) REFERENCES projects(id)
+);
+
+CREATE TABLE IF NOT EXISTS reminder_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    reminder_type TEXT NOT NULL,
+    reminder_date TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(user_id, reminder_type, reminder_date),
+    FOREIGN KEY(user_id) REFERENCES users(id)
+);
 """
 
 
@@ -131,6 +160,68 @@ class Database:
         with self.connect() as conn:
             conn.executescript(SCHEMA)
 
+    def _text_metrics(self, text: str) -> dict[str, int]:
+        """_text_metrics
+
+        Args:
+            text: 분석할 원문 또는 번역문 문자열.
+
+        Returns:
+            dict[str, int]: 글자 수, 줄 수, 세그먼트 수 집계.
+        """
+        normalized = (text or "").replace("\r\n", "\n").strip()
+        if not normalized:
+            return {
+                "chars": 0,
+                "lines": 0,
+                "segments": 0,
+            }
+
+        lines = [line for line in normalized.split("\n") if line.strip()]
+        segments = [segment for segment in lines if segment.strip()]
+        return {
+            "chars": len(normalized),
+            "lines": len(lines),
+            "segments": len(segments),
+        }
+
+    def _recalculate_project_progress(self, conn: sqlite3.Connection, project_id: int) -> None:
+        """_recalculate_project_progress
+
+        Args:
+            conn: 재사용할 SQLite 연결.
+            project_id: 집계할 프로젝트 식별자.
+
+        Returns:
+            None: 파일 기반 총량과 완료량을 프로젝트에 반영한다.
+        """
+        aggregate = conn.execute(
+            """
+            SELECT
+                COUNT(*) AS file_count,
+                COALESCE(SUM(source_segments), 0) AS total_segments,
+                COALESCE(SUM(translated_segments), 0) AS translated_segments
+            FROM project_files
+            WHERE project_id = ?
+            """,
+            (project_id,),
+        ).fetchone()
+        if not aggregate or aggregate["file_count"] == 0:
+            return
+
+        conn.execute(
+            """
+            UPDATE projects
+            SET total_units = ?, completed_units = ?
+            WHERE id = ?
+            """,
+            (
+                int(aggregate["total_segments"]),
+                min(int(aggregate["translated_segments"]), int(aggregate["total_segments"])),
+                project_id,
+            ),
+        )
+
     def create_user(self, payload: dict[str, Any]) -> sqlite3.Row:
         """create_user
 
@@ -184,6 +275,18 @@ class Database:
                 (platform_user_id,),
             ).fetchone()
 
+    def list_users(self) -> list[sqlite3.Row]:
+        """list_users
+
+        Args:
+            없음.
+
+        Returns:
+            list[sqlite3.Row]: 전체 사용자 목록.
+        """
+        with self.connect() as conn:
+            return conn.execute("SELECT * FROM users ORDER BY id ASC").fetchall()
+
     def create_project(self, payload: dict[str, Any]) -> sqlite3.Row:
         """create_project
 
@@ -215,6 +318,168 @@ class Database:
                 ),
             )
             return conn.execute("SELECT * FROM projects WHERE id = ?", (cursor.lastrowid,)).fetchone()
+
+    def create_project_file(self, payload: dict[str, Any]) -> sqlite3.Row:
+        """create_project_file
+
+        Args:
+            payload: 프로젝트 파일 생성 페이로드.
+
+        Returns:
+            sqlite3.Row: 저장된 파일 행.
+        """
+        source_metrics = self._text_metrics(payload["source_text"])
+        translated_metrics = self._text_metrics(payload.get("translated_text", ""))
+        now = _iso(datetime.now(UTC))
+        with self.connect() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO project_files (
+                    project_id, name, source_text, translated_text,
+                    source_chars, source_lines, source_segments,
+                    translated_chars, translated_lines, translated_segments,
+                    status, due_at, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    payload["project_id"],
+                    payload["name"],
+                    payload["source_text"],
+                    payload.get("translated_text", ""),
+                    source_metrics["chars"],
+                    source_metrics["lines"],
+                    source_metrics["segments"],
+                    translated_metrics["chars"],
+                    translated_metrics["lines"],
+                    translated_metrics["segments"],
+                    payload.get("status", "pending"),
+                    _iso(payload["due_at"]) if payload.get("due_at") else None,
+                    now,
+                    now,
+                ),
+            )
+            self._recalculate_project_progress(conn, payload["project_id"])
+            return conn.execute("SELECT * FROM project_files WHERE id = ?", (cursor.lastrowid,)).fetchone()
+
+    def get_project_file(self, file_id: int) -> sqlite3.Row | None:
+        """get_project_file
+
+        Args:
+            file_id: 프로젝트 파일 식별자.
+
+        Returns:
+            sqlite3.Row | None: 파일을 찾으면 행, 없으면 None.
+        """
+        with self.connect() as conn:
+            return conn.execute("SELECT * FROM project_files WHERE id = ?", (file_id,)).fetchone()
+
+    def list_project_files(self, project_id: int) -> list[sqlite3.Row]:
+        """list_project_files
+
+        Args:
+            project_id: 프로젝트 식별자.
+
+        Returns:
+            list[sqlite3.Row]: 프로젝트에 연결된 파일 목록.
+        """
+        with self.connect() as conn:
+            return conn.execute(
+                """
+                SELECT * FROM project_files
+                WHERE project_id = ?
+                ORDER BY COALESCE(due_at, '9999-12-31T00:00:00+00:00') ASC, created_at ASC
+                """,
+                (project_id,),
+            ).fetchall()
+
+    def update_project_file(self, file_id: int, updates: dict[str, Any]) -> sqlite3.Row | None:
+        """update_project_file
+
+        Args:
+            file_id: 프로젝트 파일 식별자.
+            updates: 부분 갱신 페이로드.
+
+        Returns:
+            sqlite3.Row | None: 파일을 찾으면 갱신된 행, 없으면 None.
+        """
+        with self.connect() as conn:
+            existing = conn.execute("SELECT * FROM project_files WHERE id = ?", (file_id,)).fetchone()
+            if not existing:
+                return None
+
+            merged = dict(existing)
+            merged.update(updates)
+            source_metrics = self._text_metrics(merged["source_text"])
+            translated_metrics = self._text_metrics(merged["translated_text"])
+            status = merged.get("status") or existing["status"]
+            if translated_metrics["segments"] >= source_metrics["segments"] and source_metrics["segments"] > 0:
+                status = "completed"
+            elif translated_metrics["segments"] > 0:
+                status = "in_progress"
+            elif status == "completed":
+                status = "pending"
+
+            conn.execute(
+                """
+                UPDATE project_files
+                SET name = ?, source_text = ?, translated_text = ?,
+                    source_chars = ?, source_lines = ?, source_segments = ?,
+                    translated_chars = ?, translated_lines = ?, translated_segments = ?,
+                    status = ?, due_at = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    merged["name"],
+                    merged["source_text"],
+                    merged["translated_text"],
+                    source_metrics["chars"],
+                    source_metrics["lines"],
+                    source_metrics["segments"],
+                    translated_metrics["chars"],
+                    translated_metrics["lines"],
+                    translated_metrics["segments"],
+                    status,
+                    _iso(merged["due_at"]) if isinstance(merged.get("due_at"), datetime) else merged.get("due_at"),
+                    _iso(datetime.now(UTC)),
+                    file_id,
+                ),
+            )
+            self._recalculate_project_progress(conn, existing["project_id"])
+            return conn.execute("SELECT * FROM project_files WHERE id = ?", (file_id,)).fetchone()
+
+    def project_workload_summary(self, project_id: int) -> sqlite3.Row:
+        """project_workload_summary
+
+        Args:
+            project_id: 프로젝트 식별자.
+
+        Returns:
+            sqlite3.Row: 파일 기반 작업량 집계 행.
+        """
+        now = _iso(datetime.now(UTC))
+        with self.connect() as conn:
+            return conn.execute(
+                """
+                SELECT
+                    COALESCE(SUM(source_chars), 0) AS total_chars,
+                    COALESCE(SUM(source_lines), 0) AS total_lines,
+                    COALESCE(SUM(source_segments), 0) AS total_segments,
+                    COALESCE(SUM(translated_chars), 0) AS translated_chars,
+                    COALESCE(SUM(translated_lines), 0) AS translated_lines,
+                    COALESCE(SUM(translated_segments), 0) AS translated_segments,
+                    COUNT(*) AS file_count,
+                    COALESCE(SUM(CASE WHEN translated_segments < source_segments THEN 1 ELSE 0 END), 0) AS remaining_file_count,
+                    COALESCE(SUM(
+                        CASE
+                            WHEN due_at IS NOT NULL AND due_at < ? AND translated_segments < source_segments THEN 1
+                            ELSE 0
+                        END
+                    ), 0) AS delayed_file_count
+                FROM project_files
+                WHERE project_id = ?
+                """,
+                (now, project_id),
+            ).fetchone()
 
     def get_project(self, project_id: int) -> sqlite3.Row | None:
         """get_project
@@ -289,6 +554,40 @@ class Database:
             # 필드명은 검증된 Pydantic 페이로드에서만 오므로 문자열 삽입 범위가 제한된다.
             conn.execute(f"UPDATE projects SET {', '.join(fields)} WHERE id = ?", values)
             return conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+
+    def delete_project(self, project_id: int) -> sqlite3.Row | None:
+        """delete_project
+
+        Args:
+            project_id: 삭제할 프로젝트 식별자.
+
+        Returns:
+            sqlite3.Row | None: 삭제 전 프로젝트 행. 없으면 None.
+        """
+        with self.connect() as conn:
+            project = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+            if not project:
+                return None
+
+            conn.execute("DELETE FROM project_files WHERE project_id = ?", (project_id,))
+            conn.execute("DELETE FROM sessions WHERE project_id = ?", (project_id,))
+            conn.execute("DELETE FROM messages WHERE project_id = ?", (project_id,))
+            conn.execute("DELETE FROM projects WHERE id = ?", (project_id,))
+
+            if project["status"] == "active":
+                next_project = conn.execute(
+                    """
+                    SELECT id FROM projects
+                    WHERE user_id = ?
+                    ORDER BY deadline_at ASC, created_at ASC
+                    LIMIT 1
+                    """,
+                    (project["user_id"],),
+                ).fetchone()
+                if next_project:
+                    conn.execute("UPDATE projects SET status = 'active' WHERE id = ?", (next_project["id"],))
+
+            return project
 
     def create_session(self, user_id: int, project_id: int | None, mode: str, duration_minutes: int) -> sqlite3.Row:
         """create_session
@@ -445,3 +744,44 @@ class Database:
                 """,
                 (user_id, SessionStatus.completed.value, _iso(start)),
             ).fetchall()
+
+    def has_reminder_log(self, user_id: int, reminder_type: str, reminder_date: str) -> bool:
+        """has_reminder_log
+
+        Args:
+            user_id: 내부 사용자 식별자.
+            reminder_type: 리마인더 종류 키.
+            reminder_date: YYYY-MM-DD 날짜 키.
+
+        Returns:
+            bool: 이미 같은 리마인더가 기록됐으면 True.
+        """
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT id FROM reminder_logs
+                WHERE user_id = ? AND reminder_type = ? AND reminder_date = ?
+                """,
+                (user_id, reminder_type, reminder_date),
+            ).fetchone()
+            return row is not None
+
+    def add_reminder_log(self, user_id: int, reminder_type: str, reminder_date: str) -> None:
+        """add_reminder_log
+
+        Args:
+            user_id: 내부 사용자 식별자.
+            reminder_type: 리마인더 종류 키.
+            reminder_date: YYYY-MM-DD 날짜 키.
+
+        Returns:
+            None: 중복 방지용 리마인더 발송 기록을 저장한다.
+        """
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO reminder_logs (user_id, reminder_type, reminder_date, created_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (user_id, reminder_type, reminder_date, _iso(datetime.now(UTC))),
+            )

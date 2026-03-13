@@ -92,6 +92,64 @@ class ProjectResponse(BaseModel):
     created_at: datetime
 
 
+class ProjectFileCreate(BaseModel):
+    project_id: int
+    name: str
+    source_text: str
+    translated_text: str = ""
+    due_at: datetime | None = None
+
+
+class ProjectFileUpdate(BaseModel):
+    name: str | None = None
+    source_text: str | None = None
+    translated_text: str | None = None
+    due_at: datetime | None = None
+    status: str | None = None
+
+
+class ProjectFileResponse(BaseModel):
+    id: int
+    project_id: int
+    name: str
+    source_text: str
+    translated_text: str
+    source_chars: int
+    source_lines: int
+    source_segments: int
+    translated_chars: int
+    translated_lines: int
+    translated_segments: int
+    status: str
+    due_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class PlannerResponse(BaseModel):
+    project_id: int
+    remaining_units: int
+    unit_label: str
+    remaining_days: float
+    required_units_per_day: float
+    required_units_per_hour: float
+    file_backlog_count: int
+    delayed_file_count: int
+    summary: str
+
+
+class ProjectOverviewResponse(BaseModel):
+    project: ProjectResponse
+    planner: PlannerResponse
+    file_count: int
+    remaining_file_count: int
+    delayed_file_count: int
+    total_chars: int
+    total_segments: int
+    translated_chars: int
+    translated_segments: int
+
+
 class ChatRequest(BaseModel):
     user_id: int
     message: str
@@ -138,6 +196,21 @@ class DailyReportResponse(BaseModel):
     summary: str
 
 
+class WorkloadSummaryResponse(BaseModel):
+    project_id: int
+    total_chars: int
+    total_lines: int
+    total_segments: int
+    translated_chars: int
+    translated_lines: int
+    translated_segments: int
+    remaining_chars: int
+    remaining_segments: int
+    file_count: int
+    remaining_file_count: int
+    delayed_file_count: int
+
+
 class TranslateRequest(BaseModel):
     text: str
     source_language: str = "jp"
@@ -167,6 +240,38 @@ class TranslateResponse(BaseModel):
     target_language: str
     style: str
     translated_text: str
+
+
+class FileAssistTranslateRequest(BaseModel):
+    source_language: str = "jp"
+    target_language: str = "ko"
+    style: str = "natural"
+    max_chars: int = Field(default=1200, ge=1, le=8000)
+
+    @field_validator("source_language", "target_language")
+    @classmethod
+    def validate_language_code(cls, value: str) -> str:
+        """validate_language_code
+
+        Args:
+            value: 입력된 언어 코드 문자열.
+
+        Returns:
+            str: 검증이 끝난 언어 코드.
+        """
+        normalized = _normalize_language_code(value)
+        if normalized not in SUPPORTED_LANGUAGE_CODES:
+            raise ValueError("지원 언어 코드는 ko, jp, en, ch만 가능하다.")
+        return normalized
+
+
+class FileAssistTranslateResponse(BaseModel):
+    file_id: int
+    file_name: str
+    source_language: str
+    target_language: str
+    translated_excerpt: str
+    excerpt_chars: int
 
 
 class ImageGenerateRequest(BaseModel):

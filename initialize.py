@@ -2,13 +2,11 @@
 프로젝트 로컬 모델 초기화 스크립트.
 
 기본 동작:
-- 코칭용 `ahnhs2k/saya_rp_4b_v3`를 내려받는다.
-- 필요하면 대체 코칭용 `Qwen/Qwen3-4B-Instruct-2507`도 내려받을 수 있다.
+- 코칭용 `Qwen/Qwen3-4B-Instruct-2507`를 내려받는다.
 - 번역용 `yanolja/YanoljaNEXT-Rosetta-4B`를 내려받는다.
 - 선택적으로 이미지용 `stabilityai/sdxl-turbo`도 내려받을 수 있다.
 
 저장 위치:
-- coach       -> `deadlineforyou/models/saya_rp_4b_v3`
 - coach_qwen  -> `deadlineforyou/models/qwen3_4b_instruct`
 - translation -> `deadlineforyou/models/rosetta_4b`
 - image       -> `deadlineforyou/models/sdxl_turbo`
@@ -45,17 +43,11 @@ class ModelSpec:
 
 
 MODEL_SPECS: dict[str, ModelSpec] = {
-    "coach": ModelSpec(
-        key="coach",
-        repo_id="ahnhs2k/saya_rp_4b_v3",
-        target_dir=MODELS_ROOT / "saya_rp_4b_v3",
-        description="마감 코칭용 페르소나 모델",
-    ),
     "coach_qwen": ModelSpec(
         key="coach_qwen",
         repo_id="Qwen/Qwen3-4B-Instruct-2507",
         target_dir=MODELS_ROOT / "qwen3_4b_instruct",
-        description="Saya 대신 사용할 수 있는 기본 Qwen3 코칭 모델",
+        description="기본 Qwen3 코칭 모델",
     ),
     "translation": ModelSpec(
         key="translation",

@@ -10,11 +10,18 @@ from deadlineforyou.schemas import (
     ChatRequest,
     ChatResponse,
     DailyReportResponse,
+    FileAssistTranslateRequest,
+    FileAssistTranslateResponse,
     ImageGenerateRequest,
     ImageGenerateResponse,
     ProjectCreate,
+    ProjectFileCreate,
+    ProjectFileResponse,
+    ProjectFileUpdate,
+    ProjectOverviewResponse,
     ProjectResponse,
     ProjectUpdate,
+    PlannerResponse,
     SessionComplete,
     SessionCreate,
     SessionResponse,
@@ -22,6 +29,7 @@ from deadlineforyou.schemas import (
     TranslateResponse,
     UserCreate,
     UserResponse,
+    WorkloadSummaryResponse,
 )
 from deadlineforyou.service import DeadlineCoachService
 from deadlineforyou.storage import Database
@@ -118,6 +126,144 @@ def update_project(project_id: int, payload: ProjectUpdate):
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     return project
+
+
+@app.delete("/projects/{project_id}", response_model=ProjectResponse)
+def delete_project(project_id: int):
+    """delete_project
+
+    Args:
+        project_id: 삭제할 프로젝트 식별자.
+
+    Returns:
+        ProjectResponse: 삭제된 프로젝트 응답 객체.
+    """
+    service: DeadlineCoachService = app.state.service
+    project = service.delete_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return project
+
+
+@app.get("/projects/{project_id}/overview", response_model=ProjectOverviewResponse)
+def project_overview(project_id: int):
+    """project_overview
+
+    Args:
+        project_id: 프로젝트 식별자.
+
+    Returns:
+        ProjectOverviewResponse: 파일 기반 자동 집계와 플래너를 묶은 프로젝트 개요.
+    """
+    service: DeadlineCoachService = app.state.service
+    try:
+        return service.build_project_overview(project_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Project not found") from None
+
+
+@app.get("/projects/{project_id}/planner", response_model=PlannerResponse)
+def project_planner(project_id: int):
+    """project_planner
+
+    Args:
+        project_id: 프로젝트 식별자.
+
+    Returns:
+        PlannerResponse: 남은 분량 기준 최소 필요 작업 페이스.
+    """
+    service: DeadlineCoachService = app.state.service
+    project = service.get_active_project(user_id=0, project_id=project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return service.build_project_planner(project_id)
+
+
+@app.get("/projects/{project_id}/workload", response_model=WorkloadSummaryResponse)
+def project_workload(project_id: int):
+    """project_workload
+
+    Args:
+        project_id: 프로젝트 식별자.
+
+    Returns:
+        WorkloadSummaryResponse: 자동 계산된 글자 수, 줄 수, 세그먼트 수 집계.
+    """
+    service: DeadlineCoachService = app.state.service
+    project = service.get_active_project(user_id=0, project_id=project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return service.project_workload_summary(project_id)
+
+
+@app.post("/project-files", response_model=ProjectFileResponse)
+def create_project_file(payload: ProjectFileCreate):
+    """create_project_file
+
+    Args:
+        payload: 프로젝트 파일 생성 요청 본문.
+
+    Returns:
+        ProjectFileResponse: 저장된 프로젝트 파일 응답 객체.
+    """
+    service: DeadlineCoachService = app.state.service
+    return service.create_project_file(payload.model_dump())
+
+
+@app.get("/projects/{project_id}/files", response_model=list[ProjectFileResponse])
+def list_project_files(project_id: int):
+    """list_project_files
+
+    Args:
+        project_id: 프로젝트 식별자.
+
+    Returns:
+        list[ProjectFileResponse]: 프로젝트에 연결된 파일 목록.
+    """
+    service: DeadlineCoachService = app.state.service
+    return service.list_project_files(project_id)
+
+
+@app.patch("/project-files/{file_id}", response_model=ProjectFileResponse)
+def update_project_file(file_id: int, payload: ProjectFileUpdate):
+    """update_project_file
+
+    Args:
+        file_id: 프로젝트 파일 식별자.
+        payload: 파일 부분 수정 요청 본문.
+
+    Returns:
+        ProjectFileResponse: 갱신된 파일 응답 객체.
+    """
+    service: DeadlineCoachService = app.state.service
+    file_row = service.update_project_file(file_id, payload.model_dump(exclude_none=True))
+    if not file_row:
+        raise HTTPException(status_code=404, detail="Project file not found")
+    return file_row
+
+
+@app.post("/project-files/{file_id}/assist-translation", response_model=FileAssistTranslateResponse)
+def assist_file_translation(file_id: int, payload: FileAssistTranslateRequest):
+    """assist_file_translation
+
+    Args:
+        file_id: 프로젝트 파일 식별자.
+        payload: 번역 보조 요청 본문.
+
+    Returns:
+        FileAssistTranslateResponse: 파일 일부 번역 초안 결과.
+    """
+    service: DeadlineCoachService = app.state.service
+    try:
+        return service.assist_file_translation(
+            file_id=file_id,
+            source_language=payload.source_language,
+            target_language=payload.target_language,
+            style=payload.style,
+            max_chars=payload.max_chars,
+        )
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Project file not found") from None
 
 
 @app.post("/chat", response_model=ChatResponse)

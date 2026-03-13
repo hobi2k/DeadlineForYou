@@ -211,3 +211,6 @@ deadlineforyou/models/
 
 # Generated image outputs
 data/generated_images/
+
+# Generated file assist outputs
+data/file_assists/
