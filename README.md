@@ -48,7 +48,7 @@ User
          +─ SQLite Storage
 ```
 
-## 현재 시연 영상
+## 현재 시연 영상(추후 변경 예정)
 
 - [프로젝트 매니징 봇 시연 영상](https://drive.google.com/file/d/1854-CSyinTM_a_PU6KpRTAk8lH7Wbhq-/view?usp=sharing)
 
