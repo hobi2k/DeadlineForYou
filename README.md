@@ -48,9 +48,9 @@ User
          +─ SQLite Storage
 ```
 
-## 현재 시연 영상(추후 변경 예정)
+## 시연 영상
 
-- [프로젝트 매니징 봇 시연 영상](https://drive.google.com/file/d/1854-CSyinTM_a_PU6KpRTAk8lH7Wbhq-/view?usp=sharing)
+- [프로젝트 매니징 봇 시연 영상](https://drive.google.com/file/d/1FmBSnBYtoe8JmYAZgpCcdp7SisLOkC3H/view?usp=sharing)
 
 
 ## 설치
@@ -609,10 +609,15 @@ Swagger UI에서 보통 이 순서로 확인하면 된다.
 - `.txt` 파일을 올렸을 때 파일 ID와 자동 집계가 보이는지
 - `/status`에서 남은 파일 수와 플래너 요약이 보이는지
 
-## 현재 구현 결론
+## 현재 구현
 
 - 지금은 `로컬-only` 구조다.
 - 코칭, 번역, 이미지 생성은 각자 모델을 따로 쓴다.
 - 텔레그램 일반 대화는 `tool calling`으로 번역/이미지 요청을 처리할 수 있다.
 - 프로젝트는 숫자만이 아니라 파일 단위로도 관리된다.
 - 자동 집계와 플래너가 `status/list/API`에 같이 붙어 있다.
+
+## 추후 작업
+
+- 글자수/단어수 단위로 프로젝트 관리
+- 파일 기반 작업 보고 기능 추가
