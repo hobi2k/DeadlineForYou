@@ -50,7 +50,7 @@ User
 
 ## 시연 영상
 
-- [프로젝트 매니징 봇 시연 영상](https://drive.google.com/file/d/1FmBSnBYtoe8JmYAZgpCcdp7SisLOkC3H/view?usp=sharing)
+- [프로젝트 매니징 봇 시연 영상](https://drive.google.com/file/d/1pk-bsX8rcif5vmnr_pne6grP-qsJ75ns/view?usp=sharing)
 
 
 ## 설치
